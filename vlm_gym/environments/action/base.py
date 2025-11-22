@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List
 
 class AbstractActionSet(ABC):
-    """抽象动作集基类"""
+    """"""
     
     def __init__(self, strict: bool = False):
         self.strict = strict
