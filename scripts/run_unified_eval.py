@@ -348,10 +348,10 @@ def evaluate_unified_dataset(args):
 def main():
     parser = argparse.ArgumentParser(description="Evaluate unified VQA dataset")
     parser.add_argument("--annotation", type=str,
-                        default="/data/wang/meng/GYM-Work/try_vlm_gym/data/vision_r1_sample_dataset.json",
+                        default="/GYM-Work/try_vlm_gym/data/vision_r1_sample_dataset.json",
                         help="Path to annotation file")
     parser.add_argument("--data-root", type=str,
-                        default="/data/wang/meng/GYM-Work/try_vlm_gym/data",
+                        default="/GYM-Work/try_vlm_gym/data",
                         help="Root directory for images")
     parser.add_argument("--dataset", type=str, choices=["chartqa", "scienceqa"],
                         default=None, help="Evaluate specific dataset only")
