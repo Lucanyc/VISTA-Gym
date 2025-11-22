@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Tuple, Dict, Any, List
 
 class AbstractVLMTask(ABC):
-    """VLM任务抽象基类"""
+    """VLM task base class"""
     
     def __init__(self, task_id: str):
         self.task_id = task_id
