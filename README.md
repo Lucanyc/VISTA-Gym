@@ -1,5 +1,23 @@
 # Scaling Agentic Reinforcement Learning for Tool-Integrated Reasoning in VLMs
 
+📑Contents <br>
+- [📖 Overview](#-overview)
+- [🔧 Installation](#-installation)
+- [⚡ Quick Start](#-quick-start)
+- [🚀 Full Training Pipeline](#-full-training-pipeline)
+  - [📦 Step 1: Preparing Preprocessed Data](#-step-1-preparing-preprocessed-data)
+  - [🧠 Step 2: Supervised Fine-Tuning](#-step-2-supervised-fine-tuning)
+  - [🎯 Step 3: Reinforcement Learning (GRPO / PPO)](#-step-3-reinforcement-learning-grpo--ppo)
+    - [3.1 Preprocess Training Data](#31-preprocess-training-data)
+    - [3.2 Run GRPO Training](#32-run-grpo-training)
+    - [3.3 Optional: Run PPO Instead](#33-optional-run-ppo-instead)
+    - [3.4 Convert RL Checkpoint to Hugging Face Format](#34-convert-rl-checkpoint-to-hugging-face-format)
+  - [✅ Step 4: Run Inference on Test Set](#-step-4-run-inference-on-test-set)
+  - [📊 Step 5: Evaluate Model Predictions](#-step-5-evaluate-model-predictions)
+- [🏆 Project Info](#-project-info)
+
+---
+
 📖OverView <br>
 While recent vision-language models (VLMs) demonstrate strong image understanding, their ability to ``think with images,'' i.e., to reason through multi-step visual interactions, remains limited. 
 We introduce VISTA-Gym, a scalable training environment for incentivizing tool-integrated visual reasoning capabilities in VLMs. 
