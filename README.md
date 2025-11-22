@@ -11,7 +11,6 @@
     - [3.1 Preprocess Training Data](#31-preprocess-training-data)
     - [3.2 Run GRPO Training](#32-run-grpo-training)
   - [✅ Step 4: Run Inference on Test Set](#-step-4-run-inference-on-test-set)
-  - [📊 Step 5: Evaluate Model Predictions](#-step-5-evaluate-model-predictions)
 - [🏆 Project Info](#-project-info)
 
 ---
