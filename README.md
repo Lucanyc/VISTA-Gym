@@ -1,1 +1,1 @@
-# VISTA-Gym
+# Scaling Agentic Reinforcement Learning for Tool-Integrated Reasoning in VLMs
