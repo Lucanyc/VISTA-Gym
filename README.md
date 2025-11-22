@@ -1,6 +1,7 @@
 # Scaling Agentic Reinforcement Learning for Tool-Integrated Reasoning in VLMs
 
-📖OverView \\
+📖OverView 
+
 While recent vision-language models (VLMs) demonstrate strong image understanding, their ability to ``think with images,'' i.e., to reason through multi-step visual interactions, remains limited. 
 We introduce VISTA-Gym, a scalable training environment for incentivizing tool-integrated visual reasoning capabilities in VLMs. 
 VISTA-Gym unifies diverse real-world multimodal reasoning tasks (7 tasks from 13 datasets in total) with a standardized interface for visual tools (\eg, grounding, parsing), executable interaction loops, verifiable feedback signals, and efficient trajectory logging, enabling visual agentic reinforcement learning at scale.
