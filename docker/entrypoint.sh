@@ -12,7 +12,7 @@ echo "========================================="
 
 cd /workspace
 
-# 运行评估脚本
+# 
 python scripts/run_unified_eval.py \
     --annotation /workspace/data/vision_r1_sample_dataset.json \
     --data-root /workspace/data \
