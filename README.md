@@ -13,7 +13,6 @@
   - [✅ Step 4: Run Inference on Test Set](#-step-4-run-inference-on-test-set)
 - [🏆 Project Info](#-project-info)
 
----
 
 📖OverView <br>
 While recent vision-language models (VLMs) demonstrate strong image understanding, their ability to ``think with images,'' i.e., to reason through multi-step visual interactions, remains limited. 
