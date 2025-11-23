@@ -5,12 +5,9 @@
 - [🔧 Installation](#-installation)
 - [🗺️ VlmGym](#-VlmGym)
 - [🚀 Full Training Pipeline](#-full-training-pipeline)
-  - [📦 Step 1: Preparing Preprocessed Data](#-step-1-preparing-preprocessed-data)
-  - [🧠 Step 2: Supervised Fine-Tuning](#-step-2-supervised-fine-tuning)
-  - [🎯 Step 3: Reinforcement Learning (GRPO)](#-step-3-reinforcement-learning-grpo)
-    - [3.1 Preprocess Training Data](#31-preprocess-training-data)
-    - [3.2 Run GRPO Training](#32-run-grpo-training)
-  - [✅ Step 4: Run Inference on Test Set](#-step-4-run-inference-on-test-set)
+  - [🧠 Step 1: Supervised Fine-Tuning](#-step-2-supervised-fine-tuning)
+  - [🎯 Step 2: Reinforcement Learning (GRPO)](#-step-3-reinforcement-learning-grpo)
+  - [✅ Step 3: Run Inference on Test Set](#-step-4-run-inference-on-test-set)
 - [🏆 Project Info](#-project-info)
 
 
