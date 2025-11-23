@@ -28,9 +28,8 @@ Extensive experiments across 11 public reasoning-intensive VQA benchmarks show t
 
 Gym setup
 
-Training setup
-We follow the verl/verl-tool environment 
-
+Training setup<br>
+We follow the verl/verl-tool environment:<br>
 https://github.com/TIGER-AI-Lab/verl-tool/tree/main/verl_tool
 
 Tool setup
