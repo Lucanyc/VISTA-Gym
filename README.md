@@ -23,6 +23,7 @@ With VISTA-Gym, we train VISTA-R1 to interleave tool-use with agentic reasoning 
 Extensive experiments across 11 public reasoning-intensive VQA benchmarks show that VISTA-R1-8B outperforms state-of-the-art baselines with similar sizes by 9.51\%-18.72\%, demonstrating VISTA-Gym as an effective training ground to unlock the tool-integrated reasoning capabilities for VLMs.
 
 
+![VISTA Overview](./assets/figure1.png)
 
 
 
