@@ -26,6 +26,14 @@ Extensive experiments across 11 public reasoning-intensive VQA benchmarks show t
 
 ⚙️ **Installation**<br>
 
+Gym setup
+
+Training setup
+We follow the verl/verl-tool environment 
+
+https://github.com/TIGER-AI-Lab/verl-tool/tree/main/verl_tool
+
+Tool setup
 
 
 
