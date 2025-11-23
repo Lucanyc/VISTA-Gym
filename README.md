@@ -22,7 +22,7 @@ While recent VLMs exhibit strong text-only reasoning, both proprietary and open-
 With VISTA-Gym, we train VISTA-R1 to interleave tool-use with agentic reasoning via multi-turn trajectory sampling and end-to-end reinforcement learning.
 Extensive experiments across 11 public reasoning-intensive VQA benchmarks show that VISTA-R1-8B outperforms state-of-the-art baselines with similar sizes by 9.51\%-18.72\%, demonstrating VISTA-Gym as an effective training ground to unlock the tool-integrated reasoning capabilities for VLMs.
 
-
+![VISTA Overview](./assets/overview.png)
 
 
 
