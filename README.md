@@ -3,7 +3,7 @@
 📑**Contents** <br>
 - [📖 Overview](#-overview)
 - [🔧 Installation](#-installation)
-- [⚡ Quick Start](#-quick-start)
+- [⚡ VlmGym](#-VlmGym)
 - [🚀 Full Training Pipeline](#-full-training-pipeline)
   - [📦 Step 1: Preparing Preprocessed Data](#-step-1-preparing-preprocessed-data)
   - [🧠 Step 2: Supervised Fine-Tuning](#-step-2-supervised-fine-tuning)
