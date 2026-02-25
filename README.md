@@ -157,5 +157,4 @@ We release training code for both **Qwen** (via verl) and **InternVL** families.
 ### References
 
 - verl-tool — [TIGER-AI-Lab/verl-tool](https://github.com/TIGER-AI-Lab/verl-tool)
-- ChartQA dataset — [ahmed-masry/ChartQA](https://huggingface.co/datasets/ahmed-masry/ChartQA)
 - Qwen2.5-VL — [Qwen/Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct)
