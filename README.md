@@ -58,9 +58,9 @@ A scalable reinforcement learning gym for training tool-integrated visual reason
 | Directory | Description |
 |---|---|
 | `vlm_gym/environments/` | Pluggable vision-QA environments (ChartQA, ScienceQA, Geometry3K, etc.) |
-| `vlm_gym/agents/` | VLM agent implementations (Qwen2.5-VL-7B-Instruct reference) |
-| `vlm_gym/tools/` | Visual tools (OCR, GroundingDINO, image processing) |
-| `vlm_gym/tasks/` | Task-specific reasoning and templates |
+| `vlm_gym/agents/` | VLM agent implementations (Qwen2.5-VL-7B-Instruct reference, Internvl3-8b, etc.) |
+| `vlm_gym/tools/` | Visual tools (OCR, GroundingDINO, image processing, etc.) |
+| `vlm_gym/tasks/` | Task-specific reasoning |
 | `scripts/` | Evaluation entry points |
 | `data_adapters/` | Dataset converters to unified vlmgym format |
 
