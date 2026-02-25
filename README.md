@@ -150,10 +150,6 @@ We release training code for both **Qwen** (via verl) and **InternVL** families.
 
 > *Coming soon*
 
-### ✅ Step 3: Run Inference on Test Set
-
-> *Coming soon*
-
 ---
 
 ## 🏆 Project Info
