@@ -1,13 +1,13 @@
 # vlm_gym/environments/container_utils.py
 """
-VLM Gym 容器管理工具
+VLM Gym Container Management Utilities
 
-提供容器化任务执行的功能，包括：
-- Docker容器生命周期管理
-- 文件和数据传输
-- 进程监控和超时处理
-- GPU资源管理
-- VLM特定的优化（大文件处理、模型缓存等）
+Provides functionality for containerized task execution, including:
+- Docker container lifecycle management
+- File and data transfer
+- Process monitoring and timeout handling
+- GPU resource management
+- VLM-specific optimizations (large file handling, model caching, etc.)
 """
 
 from __future__ import annotations
@@ -34,37 +34,37 @@ from docker.models.containers import Container
 
 logger = logging.getLogger(__name__)
 
-# 常量定义
+
 DOCKER_START_UP_DELAY = float(os.getenv("VLM_GYM_DOCKER_STARTUP_DELAY", "2"))
-DEFAULT_TIMEOUT = 300  # 5分钟默认超时
-DEFAULT_NO_OUTPUT_TIMEOUT = 60  # 1分钟无输出超时
+DEFAULT_TIMEOUT = 300  
+DEFAULT_NO_OUTPUT_TIMEOUT = 60  
 PROCESS_DONE_MARKER = "<<<VLM_TASK_COMPLETE>>>"
 
 
 class ContainerError(Exception):
-    """容器相关错误"""
+
     pass
 
 
 class TimeoutError(ContainerError):
-    """超时错误"""
+
     pass
 
 
 class NoOutputTimeoutError(TimeoutError):
-    """无输出超时错误"""
+
     pass
 
 
 @dataclass
 class ContainerConfig:
-    """容器配置"""
+
     image_name: str
     container_name: str
     gpu_devices: List[str] = field(default_factory=lambda: ["0"])
     memory_limit: Optional[str] = None  # e.g., "16g"
     cpu_limit: Optional[float] = None   # e.g., 4.0
-    shm_size: str = "32g"  # 共享内存大小，对VLM很重要
+    shm_size: str = "32g"  
     network_mode: str = "bridge"
     persistent: bool = False
     environment: Dict[str, str] = field(default_factory=dict)
@@ -76,7 +76,7 @@ class ContainerConfig:
 
 @dataclass
 class VLMTaskConfig:
-    """VLM任务配置"""
+
     task_id: str
     task_type: str
     model_path: Optional[str] = None
@@ -89,14 +89,12 @@ class VLMTaskConfig:
     
 
 class ContainerManager:
-    """容器管理器"""
+
     
     def __init__(self, container_type: str = "docker"):
         """
-        初始化容器管理器
-        
         Args:
-            container_type: 容器类型，"docker" 或 "podman"
+            container_type: Container type, "docker" or "podman"
         """
         self.container_type = container_type
         self.client = None
@@ -105,10 +103,10 @@ class ContainerManager:
         self._lock = threading.Lock()
         
     def _init_client(self):
-        """初始化Docker客户端"""
+
         try:
             self.client = docker.from_env()
-            # 测试连接
+
             self.client.ping()
         except docker.errors.DockerException as e:
             if any(x in str(e).lower() for x in ["connection aborted", "connection refused"]):
@@ -123,20 +121,21 @@ class ContainerManager:
         task_config: VLMTaskConfig
     ) -> Container:
         """
-        创建VLM任务容器
+        Create a VLM task container
         
         Args:
-            config: 容器配置
-            task_config: VLM任务配置
+            config: Container configuration
+            task_config: VLM task configuration
             
         Returns:
-            Container: Docker容器对象
+            Container: Docker container object
         """
-        # 检查镜像是否存在
+
+        # Check if image exists
         if not self.image_exists(config.image_name):
             raise ContainerError(f"Image {config.image_name} not found")
         
-        # 准备容器参数
+        # Build container parameters
         container_kwargs = {
             "image": config.image_name,
             "name": config.container_name,
@@ -149,7 +148,7 @@ class ContainerManager:
             "auto_remove": not config.persistent,
         }
         
-        # GPU配置
+        # GPU configuration
         if config.gpu_devices and config.gpu_devices != ["cpu"]:
             device_requests = [
                 docker.types.DeviceRequest(
@@ -159,14 +158,14 @@ class ContainerManager:
             ]
             container_kwargs["device_requests"] = device_requests
         
-        # 资源限制
+        # Resource limits
         if config.memory_limit:
             container_kwargs["mem_limit"] = config.memory_limit
         if config.cpu_limit:
             container_kwargs["cpu_quota"] = int(config.cpu_limit * 100000)
             container_kwargs["cpu_period"] = 100000
         
-        # 环境变量
+        # Environment variables
         env = config.environment.copy()
         env.update({
             "VLM_TASK_ID": task_config.task_id,
@@ -176,12 +175,12 @@ class ContainerManager:
         })
         container_kwargs["environment"] = env
         
-        # 卷挂载
+        # Mount volumes
         mounts = self._prepare_mounts(config, task_config)
         if mounts:
             container_kwargs["mounts"] = mounts
         
-        # 创建容器
+        # Create container
         try:
             container = self.client.containers.create(**container_kwargs)
             with self._lock:
@@ -196,26 +195,26 @@ class ContainerManager:
         config: ContainerConfig,
         task_config: VLMTaskConfig
     ) -> List[docker.types.Mount]:
-        """准备挂载点"""
+
         mounts = []
         
-        # 默认挂载
+        # Default mount points
         default_mounts = [
-            # 模型缓存
+            # Model cache
             {
                 "source": task_config.model_cache_dir or os.path.expanduser("~/.cache/huggingface"),
                 "target": "/root/.cache/huggingface",
                 "type": "bind",
                 "read_only": False
             },
-            # 数据目录
+            # Data directory
             {
                 "source": task_config.data_dir or "./data",
                 "target": "/workspace/data",
                 "type": "bind",
                 "read_only": True
             },
-            # 输出目录
+            # Output directory
             {
                 "source": task_config.output_dir or "./outputs",
                 "target": "/workspace/outputs",
@@ -224,10 +223,10 @@ class ContainerManager:
             }
         ]
         
-        # 合并用户定义的挂载
+        # Merge user-specified volumes
         all_mounts = default_mounts + config.volumes
         
-        # 转换为Docker Mount对象
+        # Create mount objects
         for mount_config in all_mounts:
             source_path = Path(mount_config["source"]).absolute()
             if not source_path.exists() and not mount_config.get("read_only", False):
@@ -245,19 +244,19 @@ class ContainerManager:
     
     def start_container(self, container: Container) -> subprocess.Popen:
         """
-        启动容器并返回交互进程
+        Start the container and return an interactive process
         
         Args:
-            container: Docker容器对象
+            container: Docker container object
             
         Returns:
-            subprocess.Popen: 与容器交互的进程
+            subprocess.Popen: Process for interacting with the container
         """
-        # 启动容器
+        # Start the container
         container.start()
         time.sleep(DOCKER_START_UP_DELAY)
         
-        # 创建交互进程
+        # Create an interactive process
         exec_cmd = [
             self.container_type,
             "exec",
@@ -287,23 +286,23 @@ class ContainerManager:
         stream: bool = False
     ) -> Union[str, Tuple[str, int]]:
         """
-        在容器中执行命令
+        Execute a command in the container
         
         Args:
-            container: Docker容器对象
-            command: 要执行的命令
-            timeout: 总超时时间
-            no_output_timeout: 无输出超时时间
-            stream: 是否流式输出
+            container: Docker container object
+            command: Command to execute
+            timeout: Total timeout duration
+            no_output_timeout: No-output timeout duration
+            stream: Whether to use streaming output
             
         Returns:
-            如果stream=False: (output, exit_code)
-            如果stream=True: 返回生成器
+            If stream=False: (output, exit_code)
+            If stream=True: Returns a generator
         """
         if isinstance(command, list):
             command = shlex.join(command)
         
-        # 添加完成标记
+        # Wrap command with completion marker
         wrapped_command = f"{command} && echo '{PROCESS_DONE_MARKER}:0' || echo '{PROCESS_DONE_MARKER}:$?'"
         
         try:
@@ -322,7 +321,7 @@ class ContainerManager:
         timeout: float,
         no_output_timeout: float
     ) -> Tuple[str, int]:
-        """执行命令并等待完成"""
+
         exec_result = container.exec_run(
             command,
             stdout=True,
@@ -339,7 +338,7 @@ class ContainerManager:
         for stdout, stderr in exec_result.output:
             current_time = time.time()
             
-            # 检查超时
+            # Check total timeout
             if current_time - start_time > timeout:
                 raise TimeoutError(f"Command timed out after {timeout}s")
             
@@ -349,13 +348,13 @@ class ContainerManager:
                     "\n".join(output_lines)
                 )
             
-            # 处理输出
+            # Process output
             if stdout:
                 line = stdout.decode("utf-8", errors="replace")
                 output_lines.append(line)
                 last_output_time = current_time
                 
-                # 检查完成标记
+                # Check for completion marker
                 if PROCESS_DONE_MARKER in line:
                     exit_code = int(line.split(":")[-1])
                     break
@@ -366,7 +365,7 @@ class ContainerManager:
                 last_output_time = current_time
         
         output = "".join(output_lines)
-        # 移除完成标记
+        # Remove completion marker
         output = output.replace(f"{PROCESS_DONE_MARKER}:{exit_code}", "").strip()
         
         return output, exit_code
@@ -378,8 +377,8 @@ class ContainerManager:
         timeout: float,
         no_output_timeout: float
     ):
-        """流式执行命令"""
-        # 实现流式输出生成器
+
+        # Streaming execution
         exec_result = container.exec_run(
             command,
             stdout=True,
@@ -394,7 +393,7 @@ class ContainerManager:
         for stdout, stderr in exec_result.output:
             current_time = time.time()
             
-            # 检查超时
+            # Check timeouts
             if current_time - start_time > timeout:
                 raise TimeoutError(f"Command timed out after {timeout}s")
             
@@ -416,15 +415,15 @@ class ContainerManager:
         target: str
     ):
         """
-        复制文件或数据到容器
+        Copy a file or data to the container
         
         Args:
-            container: Docker容器对象
-            source: 源文件路径或字节数据
-            target: 容器内目标路径
+            container: Docker container object
+            source: Source file path or byte data
+            target: Target path inside the container
         """
         if isinstance(source, bytes):
-            # 处理字节数据
+            # Handle byte data
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
                 tmp.write(source)
                 tmp.flush()
@@ -432,16 +431,16 @@ class ContainerManager:
                 os.unlink(tmp.name)
         elif isinstance(source, str):
             if os.path.exists(source):
-                # 复制文件
+                # Copy file
                 self._copy_file_to_container(container, source, target)
             else:
-                # 当作文本内容
+                # Treat as text content
                 self.copy_to_container(container, source.encode("utf-8"), target)
         else:
             raise ValueError(f"Unsupported source type: {type(source)}")
     
     def _copy_file_to_container(self, container: Container, host_path: str, container_path: str):
-        """复制文件到容器"""
+        """Copy a file to the container"""
         cmd = [
             self.container_type,
             "cp",
@@ -464,12 +463,12 @@ class ContainerManager:
         target: str
     ):
         """
-        从容器复制文件
+        Copy a file from the container
         
         Args:
-            container: Docker容器对象
-            source: 容器内源路径
-            target: 主机目标路径
+            container: Docker container object
+            source: Source path inside the container
+            target: Host target path
         """
         cmd = [
             self.container_type,
@@ -488,24 +487,24 @@ class ContainerManager:
     
     def get_container_stats(self, container: Container) -> Dict[str, Any]:
         """
-        获取容器资源使用统计
+        Get container resource usage statistics
         
         Args:
-            container: Docker容器对象
+            container: Docker container object
             
         Returns:
-            资源使用统计信息
+            Resource usage statistics
         """
         stats = container.stats(stream=False)
         
-        # 解析CPU使用率
+        # Parse CPU usage
         cpu_delta = stats["cpu_stats"]["cpu_usage"]["total_usage"] - \
                    stats["precpu_stats"]["cpu_usage"]["total_usage"]
         system_delta = stats["cpu_stats"]["system_cpu_usage"] - \
                       stats["precpu_stats"]["system_cpu_usage"]
         cpu_percent = (cpu_delta / system_delta) * 100.0 if system_delta > 0 else 0
         
-        # 解析内存使用
+        # Parse memory usage
         memory_usage = stats["memory_stats"]["usage"]
         memory_limit = stats["memory_stats"]["limit"]
         memory_percent = (memory_usage / memory_limit) * 100.0
@@ -523,13 +522,13 @@ class ContainerManager:
     
     def monitor_gpu(self, container: Container) -> Dict[str, Any]:
         """
-        监控容器GPU使用
+        Monitor container GPU usage
         
         Args:
-            container: Docker容器对象
+            container: Docker container object
             
         Returns:
-            GPU使用信息
+            GPU usage information
         """
         try:
             output, _ = self.execute_in_container(
@@ -558,11 +557,11 @@ class ContainerManager:
     
     def stop_container(self, container: Container, timeout: int = 10):
         """
-        停止容器
+        Stop the container
         
         Args:
-            container: Docker容器对象
-            timeout: 停止超时时间
+            container: Docker container object
+            timeout: Stop timeout duration
         """
         try:
             container.stop(timeout=timeout)
@@ -580,10 +579,10 @@ class ContainerManager:
     
     def cleanup_container(self, container: Container):
         """
-        清理容器
+        Clean up the container
         
         Args:
-            container: Docker容器对象
+            container: Docker container object
         """
         self.stop_container(container)
         try:
@@ -593,7 +592,7 @@ class ContainerManager:
             logger.warning(f"Failed to remove container: {e}")
     
     def cleanup_all(self):
-        """清理所有活动容器"""
+        """Clean up all active containers"""
         with self._lock:
             containers = list(self.active_containers.values())
         
@@ -601,7 +600,7 @@ class ContainerManager:
             self.cleanup_container(container)
     
     def image_exists(self, image_name: str) -> bool:
-        """检查镜像是否存在"""
+        """Check if an image exists"""
         try:
             self.client.images.get(image_name)
             return True
@@ -613,11 +612,11 @@ class ContainerManager:
     
     def pull_image(self, image_name: str, progress_callback: Optional[Callable] = None):
         """
-        拉取Docker镜像
+        Pull a Docker image
         
         Args:
-            image_name: 镜像名称
-            progress_callback: 进度回调函数
+            image_name: Image name
+            progress_callback: Progress callback function
         """
         try:
             logger.info(f"Pulling image {image_name}")
@@ -631,14 +630,14 @@ class ContainerManager:
 
 
 class VLMContainerExecutor:
-    """VLM容器执行器 - 高级接口"""
+    """VLM Container Executor - High-level interface"""
     
     def __init__(self, manager: Optional[ContainerManager] = None):
         """
-        初始化执行器
+        Initialize the executor
         
         Args:
-            manager: 容器管理器实例
+            manager: Container manager instance
         """
         self.manager = manager or ContainerManager()
         self.executor = ThreadPoolExecutor(max_workers=4)
@@ -651,16 +650,16 @@ class VLMContainerExecutor:
         cleanup: bool = True
     ) -> Dict[str, Any]:
         """
-        运行VLM任务
+        Run a VLM task
         
         Args:
-            task_config: VLM任务配置
-            container_config: 容器配置
-            task_script: 要执行的任务脚本
-            cleanup: 是否在完成后清理容器
+            task_config: VLM task configuration
+            container_config: Container configuration
+            task_script: Task script to execute
+            cleanup: Whether to clean up the container after completion
             
         Returns:
-            任务执行结果
+            Task execution result
         """
         container = None
         result = {
@@ -673,17 +672,17 @@ class VLMContainerExecutor:
         }
         
         try:
-            # 创建容器
+            # Create container
             container = self.manager.create_vlm_container(container_config, task_config)
             
-            # 启动容器
+            # Start container
             self.manager.start_container(container)
             
-            # 复制任务脚本
+            # Copy task script
             script_path = "/workspace/task_script.py"
             self.manager.copy_to_container(container, task_script, script_path)
             
-            # 执行任务
+            # Execute task
             logger.info(f"Executing task {task_config.task_id}")
             output, exit_code = self.manager.execute_in_container(
                 container,
@@ -696,12 +695,12 @@ class VLMContainerExecutor:
             result["exit_code"] = exit_code
             result["status"] = "success" if exit_code == 0 else "failed"
             
-            # 获取统计信息
+            # Get statistics
             result["stats"] = self.manager.get_container_stats(container)
             if task_config.enable_gpu_monitor:
                 result["gpu_stats"] = self.manager.monitor_gpu(container)
             
-            # 复制输出文件
+            # Copy output files
             output_files = ["/workspace/outputs/result.json", "/workspace/outputs/log.txt"]
             for file_path in output_files:
                 try:
@@ -731,15 +730,15 @@ class VLMContainerExecutor:
         cleanup: bool = True
     ) -> List[Dict[str, Any]]:
         """
-        并行运行多个VLM任务
+        Run multiple VLM tasks in parallel
         
         Args:
-            tasks: 任务列表，每个元素为(task_config, container_config, task_script)
-            max_parallel: 最大并行数
-            cleanup: 是否清理容器
+            tasks: Task list, each element is (task_config, container_config, task_script)
+            max_parallel: Maximum number of parallel tasks
+            cleanup: Whether to clean up containers
             
         Returns:
-            任务结果列表
+            List of task results
         """
         with ThreadPoolExecutor(max_workers=max_parallel) as executor:
             futures = []
@@ -775,7 +774,7 @@ class VLMContainerExecutor:
         self.executor.shutdown()
 
 
-# 便捷函数
+# Convenience functions
 def create_vlm_container_config(
     image_name: str = "vlm_gym:latest",
     gpu_devices: List[str] = None,
@@ -783,16 +782,16 @@ def create_vlm_container_config(
     **kwargs
 ) -> ContainerConfig:
     """
-    创建VLM容器配置的便捷函数
+    Convenience function for creating a VLM container configuration
     
     Args:
-        image_name: Docker镜像名称
-        gpu_devices: GPU设备列表
-        memory_limit: 内存限制
-        **kwargs: 其他配置参数
+        image_name: Docker image name
+        gpu_devices: List of GPU devices
+        memory_limit: Memory limit
+        **kwargs: Other configuration parameters
         
     Returns:
-        ContainerConfig实例
+        ContainerConfig instance
     """
     config = ContainerConfig(
         image_name=image_name,
@@ -812,16 +811,16 @@ def create_vlm_task_config(
     **kwargs
 ) -> VLMTaskConfig:
     """
-    创建VLM任务配置的便捷函数
+    Convenience function for creating a VLM task configuration
     
     Args:
-        task_id: 任务ID
-        task_type: 任务类型
-        timeout: 超时时间
-        **kwargs: 其他配置参数
+        task_id: Task ID
+        task_type: Task type
+        timeout: Timeout duration
+        **kwargs: Other configuration parameters
         
     Returns:
-        VLMTaskConfig实例
+        VLMTaskConfig instance
     """
     config = VLMTaskConfig(
         task_id=task_id,
@@ -832,12 +831,12 @@ def create_vlm_task_config(
     return config
 
 
-# 使用示例
+# Usage examples
 if __name__ == "__main__":
-    # 示例1: 基本使用
+    # Example 1: Basic usage
     manager = ContainerManager()
     
-    # 配置
+    # Configuration
     container_config = ContainerConfig(
         image_name="vlm_gym:latest",
         container_name="test_vlm_task",
@@ -853,12 +852,12 @@ if __name__ == "__main__":
         model_cache_dir="/home/models"
     )
     
-    # 创建并运行容器
+    # Create and run container
     try:
         container = manager.create_vlm_container(container_config, task_config)
         process = manager.start_container(container)
         
-        # 执行命令
+        # Execute command
         output, exit_code = manager.execute_in_container(
             container,
             "python --version",
@@ -866,16 +865,16 @@ if __name__ == "__main__":
         )
         print(f"Python version: {output}")
         
-        # 获取统计
+        # Get statistics
         stats = manager.get_container_stats(container)
         print(f"Container stats: {stats}")
         
     finally:
         manager.cleanup_all()
     
-    # 示例2: 使用执行器
+    # Example 2: Using the executor
     with VLMContainerExecutor() as executor:
-        # 定义任务脚本
+        # Define task script
         task_script = """
 import time
 print("Starting VLM task...")
@@ -883,7 +882,7 @@ time.sleep(2)
 print("Task completed!")
 """
         
-        # 运行任务
+        # Run task
         result = executor.run_vlm_task(
             task_config,
             container_config,
