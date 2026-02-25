@@ -39,7 +39,119 @@ Tool setup
 
 🗺️ **Gym interaction**  
 
-We will progressively update our github
+A scalable reinforcement learning gym for training tool-integrated visual reasoning in vision-language models. Drop in any benchmark, any VLM, and evaluate with reflection and tool-augmented reasoning.
 
+Core components:
+
+- `vlm_gym/environments/` — Pluggable vision-QA environments (ChartQA, ScienceQA, Geometry3K, etc)
+- `vlm_gym/agents/` — VLM agent implementations (Qwen2.5-VL-7B-Instruct reference)
+- `vlm_gym/tools/` — Visual tools (OCR, groundingdino, image processing)
+- `vlm_gym/tasks/` — Task-specific reasoning 
+- `scripts/` — Evaluation entry points
+- `data_adapters/` — Dataset converters to unified vlmgym format
+
+
+## Installation
+### Gym setup
+
+```bash
+# Clone the repo
+git clone https://github.com/Lucanyc/vista-gym.git
+cd vista-gym
+
+# Install dependencies
+pip install -e .
+```
+
+### Docker setup
+
+```bash
+cd docker
+bash build_docker.sh
+bash run_docker.sh
+```
+
+### Data preparation
+
+Convert ChartQA to vlmgym format:
+
+```bash
+python data_adapters/convert_chartqa_to_vlmgym.py
+```
+
+## Gym Interaction
+
+The gym follows a standard environment-agent loop: the environment sends an observation (image + question), the agent returns an action (predicted answer), and the environment provides feedback for retry.
+
+```
+Environment (ChartQA)          Agent (VLM)
+    │                              │
+    │──── obs: image + question ──►│
+    │                              │
+    │◄── action: <think>...</think>│
+    │          <answer>Yes</answer>│
+    │                              │
+    │  [if wrong & reflection on]  │
+    │                              │
+    │──── feedback + retry ───────►│
+    │◄── action: revised answer ──│
+    │                              │
+    │  reward: 1.0 (correct)       │
+```
+
+### Run ChartQA evaluation with reflection
+
+```bash
+python scripts/run_chartqa_eval_reflection_with_tool.py \
+  --annotation data/chartqa/converted_train/train_human_vlmgym_container.json \
+  --data-root data/chartqa \
+  --model Qwen/Qwen2.5-VL-7B-Instruct \
+  --enable-reflection \
+  --max-attempts 3 \
+  --numerical-tolerance 0.05 \
+  --limit 1000
+```
+
+### Run with tool-augmented reasoning
+
+```bash
+python scripts/run_chartqa_eval_reflection_with_tool.py \
+  --annotation data/chartqa/converted_train/train_human_vlmgym_container.json \
+  --data-root data/chartqa \
+  --model Qwen/Qwen2.5-VL-7B-Instruct \
+  --enable-chartqa-reasoning \
+  --limit 1000
+```
+
+### Quick test (3 samples)
+
+```bash
+python scripts/run_chartqa_eval_reflection_with_tool.py \
+  --annotation data/chartqa/converted_train/train_human_vlmgym_container.json \
+  --data-root data/chartqa \
+  --model Qwen/Qwen2.5-VL-7B-Instruct \
+  --enable-reflection \
+  --max-attempts 3 \
+  --debug \
+  --limit 3
+```
+
+## Requirements
+
+- Python 3.10+
+- Linux, CUDA 12, NVIDIA GPU (80GB+ recommended for training; inference requires ~20GB for 7B model)
+- PyTorch 2.0+
+- Transformers 4.40+
+
+## References
+
+- verl-tool — [TIGER-AI-Lab/verl-tool](https://github.com/TIGER-AI-Lab/verl-tool)
+- ChartQA dataset — [ahmed-masry/ChartQA](https://huggingface.co/datasets/ahmed-masry/ChartQA)
+- Qwen2.5-VL — [Qwen/Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct)
 
 🚀 **Full Training Pipeline**
+Qwen family---verl
+We release the code for Internvl family model based on verl framework
+SFT
+RL
+
