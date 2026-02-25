@@ -51,7 +51,6 @@ Core components:
 - `data_adapters/` — Dataset converters to unified vlmgym format
 
 
-## Installation
 ### Gym setup
 
 ```bash
