@@ -14,26 +14,26 @@ def extract_tool_call_contents(start_token, end_token, text):
 class ToolMeta(type):
     def __init__(cls, name, bases, attrs):
         super().__init__(name, bases, attrs)
-        # 跳过基类
+
         if name == 'ToolBase':
             return
 
-        # 确保子类定义了 name 属性
+
         if not hasattr(cls, 'name'):
             raise AttributeError(f"Tool subclass {name} must define a 'name' attribute.")
 
-        # 检查 name 是否已注册
+
         if cls.name in ToolBase.registry:
             existing = ToolBase.registry[cls.name]
             print(f" [WARNING] Class {cls.__name__} is trying to register '{cls.name}', which has already been registered by {existing.__name__}")
             return
 
-        # 注册到基类的 registry
+
         ToolBase.registry[cls.name] = cls
 
 
 class ToolBase(metaclass=ToolMeta):
-    registry = {}  # 全局注册表
+
 
     def __init__(self, name: str, description: str = '', parameters: Dict = {}, **kwargs):
         """
