@@ -79,7 +79,7 @@ Environment (ChartQA)            Agent (VLM)
     │   [if wrong & reflection on]   │
     │                                │
     │──── feedback + retry ─────────►│
-    │◄─── action: revised answer ───│
+    │◄─── action: revised answer ─── │
     │                                │
     │   reward: 1.0 (correct)        │
 ```
