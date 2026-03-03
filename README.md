@@ -109,25 +109,19 @@ python scripts/run_chartqa_eval_reflection_with_tool.py \
 
 ```bash
 python scripts/run_chartqa_eval_reflection_with_tool.py \
-  --annotation data/chartqa/converted_train/train_human_vlmgym_container.json \
-  --data-root data/chartqa \
-  --model Qwen/Qwen2.5-VL-7B-Instruct \
-  --enable-chartqa-reasoning \
-  --limit 1000
+    --annotation data/chartqa/converted_train/train_human_vlmgym_container.json \
+    --data-root data/chartqa \
+    --model Qwen/Qwen2.5-VL-7B-Instruct \
+    --enable-chartmoe \
+    --chartmoe-model "/workspace/mathvista/model" \
+    --chartmoe-device cuda \
+    --use-structured-output \
+    --enable-reflection \
+    --max-attempts 3 \
+    --limit 50
+
 ```
 
-### Quick Test (3 samples)
-
-```bash
-python scripts/run_chartqa_eval_reflection_with_tool.py \
-  --annotation data/chartqa/converted_train/train_human_vlmgym_container.json \
-  --data-root data/chartqa \
-  --model Qwen/Qwen2.5-VL-7B-Instruct \
-  --enable-reflection \
-  --max-attempts 3 \
-  --debug \
-  --limit 3
-```
 
 ### Requirements
 
