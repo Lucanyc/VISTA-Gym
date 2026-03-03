@@ -50,12 +50,13 @@ We follow the verl/verl-tool environment: [TIGER-AI-Lab/verl-tool](https://githu
 
 | Model | HuggingFace Link | Usage |
 |---|---|---|
-| ChartMoE | [🤗 LuKasatvt/VistaGym/ChartMoE](https://huggingface.co/LuKasatvt/VistaGym/tree/main/chartmoe) | `--chartmoe-model \"LuKasatvt/VistaGym\"` |
+| ChartMoE | [🤗 LuKasatvt/VistaGym/ChartMoE](https://huggingface.co/LuKasatvt/VistaGym/tree/main/chartmoe) | `--chartmoe-model "LuKasatvt/VistaGym"` |
+| MultiMath | [🤗 LuKasatvt/VistaGym/MultiMath](https://huggingface.co/LuKasatvt/VistaGym/tree/main/multimath) | `--enable-multimath` |
+| GLLaVA | [🤗 LuKasatvt/VistaGym/GLLaVA](https://huggingface.co/LuKasatvt/VistaGym/tree/main/gllava) | `--enable-gllava` |
+| EasyOCR | [🤗 LuKasatvt/VistaGym/EasyOCR](https://huggingface.co/LuKasatvt/VistaGym/tree/main/easyocr) | `--enable-easyocr` |
 | Qwen2.5-VL-7B | [🤗 Qwen/Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) | `--model Qwen/Qwen2.5-VL-7B-Instruct` |
 | InternVL3-8B | [🤗 OpenGVLab/InternVL3-8B-Instruct](https://huggingface.co/OpenGVLab/InternVL3-8B-Instruct) | `--model OpenGVLab/InternVL3-8B-Instruct` |
 | ... | More models supported | |
-
----
 
 ## 🗺️ VISTA-Gym
 
