@@ -50,7 +50,7 @@ We follow the verl/verl-tool environment: [TIGER-AI-Lab/verl-tool](https://githu
 
 | Model | HuggingFace Link | Usage |
 |---|---|---|
-| ChartMoE | [🤗 IDEA-FinAI/chartmoe](https://huggingface.co/IDEA-FinAI/chartmoe) | `--chartmoe-model "IDEA-FinAI/chartmoe"` |
+| ChartMoE | [🤗 LuKasatvt/VistaGym/ChartMoE](https://huggingface.co/LuKasatvt/VistaGym/tree/main/chartmoe) | --chartmoe-model \"LuKasatvt/VistaGym\"` |
 | Qwen2.5-VL-7B | [🤗 Qwen/Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) | `--model Qwen/Qwen2.5-VL-7B-Instruct` |
 | InternVL3-8B | [🤗 OpenGVLab/InternVL3-8B-Instruct](https://huggingface.co/OpenGVLab/InternVL3-8B-Instruct) | `--model OpenGVLab/InternVL3-8B-Instruct` |
 | ... | More models supported | |
