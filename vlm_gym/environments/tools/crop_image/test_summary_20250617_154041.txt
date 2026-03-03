@@ -1,0 +1,29 @@
+DeepEyes ScienceQA Enhanced Test Summary
+================================================================================
+Timestamp: 20250617_154041
+Dataset: /data/wang/meng/GYM-Work/dataset/ScienceQA/reformatted/train.json
+Save directory: /data/wang/meng/GYM-Work/vlm_gym-tool-usage-mathvista/vlm_gym/environments/tools/crop_image/
+Samples processed: 3
+
+Processed samples:
+
+- Sample 1:
+  Question: Which of these states is farthest north?...
+  Grade: elementary school
+  Has hint: No
+  Has lecture: Yes
+  Tests performed: ['zoom_upper', 'answer']
+
+- Sample 2:
+  Question: Identify the question that Tom and Justin's experiment can b...
+  Grade: middle school
+  Has hint: Yes
+  Has lecture: Yes
+  Tests performed: ['zoom_upper', 'rotate', 'answer']
+
+- Sample 3:
+  Question: Identify the question that Kathleen and Bryant's experiment ...
+  Grade: middle school
+  Has hint: Yes
+  Has lecture: Yes
+  Tests performed: ['zoom_upper', 'rotate', 'answer']

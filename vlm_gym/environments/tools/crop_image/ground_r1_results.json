@@ -1,0 +1,62 @@
+[
+  {
+    "example_id": "11396",
+    "question": "Which material is this bouncy ball made of?",
+    "ground_truth": "rubber",
+    "predicted": "rubber",
+    "bbox": null,
+    "thinking": "It's not possible to determine the material of the bouncy ball just by looking at the image provided. The image shows a red sphere, but it does not specify its composition or properties. Bouncy balls can be made from various materials such as rubber, foam, or even inflatable materials like balloons. Without additional information about the ball's texture, flexibility, or other characteristics, it's impossible to accurately identify the material.\n\nTherefore, based on the given options and the lack of specific details about the ball's properties, we cannot definitively choose between rubber or another material.",
+    "is_correct": true,
+    "has_image": true
+  },
+  {
+    "example_id": "11643",
+    "question": "Which material is this tablecloth made of?",
+    "ground_truth": "linen",
+    "predicted": "",
+    "bbox": null,
+    "thinking": "It's not possible to determine the material of the tablecloth from the image provided. The image only shows a plain white tablecloth draped over a circular table. There is no indication of the material used to make the tablecloth.",
+    "is_correct": false,
+    "has_image": true
+  },
+  {
+    "example_id": "8208",
+    "question": "Will these magnets attract or repel each other?",
+    "ground_truth": "repel",
+    "predicted": "attract",
+    "bbox": [
+      0,
+      0,
+      256,
+      109
+    ],
+    "thinking": "Let's analyze the image step by step:\n\n1. Identify the poles of the magnets:\n   - The left magnet has its north pole (N) facing the south pole (S) of the right magnet.\n   - The right magnet has its south pole (S) facing the north pole (N) of the left magnet.\n\n2. Determine the interaction based on the orientation:\n   - Opposite poles (N and S) attract each other.\n   - Like poles (N and N, or S and S) repel each other.\n\n3. Conclusion:\n   - Since the north pole of one magnet is facing the south pole of the other magnet, they will attract each other.\n\nTherefore, the magnets will attract each other.",
+    "is_correct": false,
+    "has_image": true
+  },
+  {
+    "example_id": "883",
+    "question": "Complete the sentence.\nThe African elephant is the () land animal in the world.",
+    "ground_truth": "largest",
+    "predicted": "largest",
+    "bbox": [
+      1,
+      30,
+      250,
+      179
+    ],
+    "thinking": "Elephants are indeed large animals, but determining if they are the largest requires comparing them with other land animals. African elephants are known for their massive size, which includes their long tusks and large ears. While there may be larger animals like blue whales or some species of fish, when considering only terrestrial animals, the African elephant is typically considered the largest.",
+    "is_correct": true,
+    "has_image": true
+  },
+  {
+    "example_id": "6106",
+    "question": "Think about the magnetic force between the magnets in each pair. Which of the following statements is true?",
+    "ground_truth": "The magnetic force is stronger in Pair 1.",
+    "predicted": "The magnetic force is stronger in Pair 1.",
+    "bbox": null,
+    "thinking": "Let's analyze the image step by step:\n\n1. **Pair 1**: The distance between the magnets is labeled as 3 inches.\n2. **Pair 2**: The distance between the magnets is labeled as 5 inches.\n\nAccording to the related knowledge provided:\n- The strength of the magnetic force decreases with increasing distance between the magnets.\n- The closer the magnets are to each other, the stronger the magnetic force.\n\nSince Pair 1 has a shorter distance (3 inches) compared to Pair 2 (5 inches), the magnetic force between the magnets in Pair 1 will be stronger than in Pair 2.\n\nTherefore, the correct statement is:\n<answer>A</answer>",
+    "is_correct": true,
+    "has_image": true
+  }
+]

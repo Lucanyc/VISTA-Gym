@@ -1,4 +1,4 @@
-# vlm_gym/environments/vision_qa_env.py
+
 import time
 import logging
 import json
@@ -6,29 +6,48 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 from PIL import Image
 from .action import VLMActionSet
+import copy
+import os
+import re   
 
-from vlm_gym.environments.tools.mm_process.visual_toolbox_v2 import VisualToolBoxV2
-from vlm_gym.environments.tools.mm_process.visual_toolbox import VisualToolBoxV5
-from vlm_gym.environments.action.parser import parse_deepeyes_action
-from vlm_gym.environments.tools.chart import ChartMoETool
+# 导入新的DeepEyes工具
+from vlm_gym.environments.tools.deepeyes_tool import DeepEyesTool
 
-
-# Import Grounding DINO tool
+# 导入Grounding DINO工具
 from vlm_gym.environments.tools.grounding_dino import GroundingDINOTool
 
-VisualToolBox = VisualToolBoxV2 
+# 导入EasyOCR工具
+from vlm_gym.environments.tools.easyocr_tool import EasyOCRTool
+
+#from vlm_gym.environments.tools.chart.chartmoe import FixedChartMoETool
+from vlm_gym.environments.tools.geometry_tools.diagram_formalizer import DiagramFormalizerTool
+
+from vlm_gym.environments.tools.chart.chartmoe import ChartMoETool
+
+from vlm_gym.environments.tools.sam2_tool import SAM2Tool
+
+from vlm_gym.environments.tools.geometry_tools.sympy_geometry import SympyGeometryTool
+
+from vlm_gym.environments.tools.intergps import InterGPSTool
+
+from vlm_gym.environments.tools.multimath_server import MultiMathRemoteTool
+
+#这里是本地模型，不对因为有配置冲突
+#from vlm_gym.environments.tools.multimath import MultiMathTool
+#这里是导入multimath的server api
+from vlm_gym.environments.tools.multimath_server import MultiMathRemoteTool
 
 logger = logging.getLogger(__name__)
 
 
 class SimpleChatManager:
-    """Simple chat history manager"""
+    """简单的聊天历史管理器"""
     
     def __init__(self):
         self.history: List[Dict[str, Any]] = []
     
     def add_message(self, role: str, content: Any):
-        """Add a message"""
+        """添加消息"""
         message = {
             "role": role,
             "content": content,
@@ -37,16 +56,17 @@ class SimpleChatManager:
         self.history.append(message)
     
     def get_history(self) -> List[Dict[str, Any]]:
-        """Get history"""
+        """获取历史记录"""
         return self.history.copy()
     
     def clear(self):
-        """Clear history"""
+        """清空历史"""
         self.history.clear()
 
 
+
 class VisionQAEnv:
-    """Vision QA Environment - Supports complex action system, DeepEyes tools, Grounding DINO, and ChartMoE"""
+    """视觉问答环境 - 支持复杂动作系统、新DeepEyes工具、Grounding DINO、ChartMoE和EasyOCR"""
     
     def __init__(
         self,
@@ -58,74 +78,165 @@ class VisionQAEnv:
         enable_actions: bool = True,
         custom_actions: Optional[Dict[str, callable]] = None,
         enable_deepeyes_tools: bool = False,
-        deepeyes_version: str = "v2",
+        deepeyes_config: Dict[str, Any] = None,  # 新DeepEyes配置
         enable_grounding_dino: bool = False,
         grounding_dino_config: Dict[str, Any] = None,
         enable_chartmoe: bool = False,
         chartmoe_config: Dict[str, Any] = None,
+        enable_diagram_formalizer: bool = False,
+        diagram_formalizer_config: Dict[str, Any] = None,
+        enable_easyocr: bool = False,
+        easyocr_config: Dict[str, Any] = None,
+        inter_gps_config: Optional[Dict[str, Any]] = None,
+        enable_inter_gps: bool = False,
+        enable_sam2: bool = False,
+        enable_sympy_geometry: bool = False,
+        sympy_geometry_config: Optional[Dict[str, Any]] = None,
+        sam2_config: Optional[Dict[str, Any]] = None,
+        #enable_multimath: bool = False,
+        #multimath_config: Optional[Dict[str, Any]] = None,
+        enable_multimath_server: bool = False,
+        multimath_server_config: Optional[Dict[str, Any]] = None,
         **kwargs
     ):
-        """Initialize the Vision QA environment"""
+        """初始化视觉问答环境"""
         self.dataset_path = Path(dataset_path)
         self.task_kwargs = task_kwargs or {}
         self.max_steps = max_steps
         self.time_limit = time_limit
         self.enable_actions = enable_actions
         self.enable_deepeyes_tools = enable_deepeyes_tools
-        self.deepeyes_version = deepeyes_version
         self.enable_grounding_dino = enable_grounding_dino
         self.enable_chartmoe = enable_chartmoe
-        
+        self.enable_diagram_formalizer = enable_diagram_formalizer
+        self.enable_easyocr = enable_easyocr
+        self.enable_inter_gps = enable_inter_gps
+        self.enable_sam2 = enable_sam2
+        self.enable_sympy_geometry = enable_sympy_geometry
+        self.enable_multimath_server = enable_multimath_server
         self.pending_tool_feedback = None
         self.requires_tool_response = False
         
-        # Initialize action system
+        # 初始化动作系统
         if self.enable_actions:
             self.action_set = VLMActionSet(custom_actions=custom_actions)
         else:
             self.action_set = None
         
-        # Initialize DeepEyes tool
+        # 初始化新的DeepEyes工具
         self.deepeyes_tool = None
         if self.enable_deepeyes_tools:
             try:
-                if deepeyes_version == "v2":
-                    self.deepeyes_tool = VisualToolBoxV2("visual_toolbox_v2", None, None)
-                else:
-                    self.deepeyes_tool = VisualToolBox("visual_toolbox", None, None)
-                logger.info(f"DeepEyes tool initialized: visual_toolbox_{deepeyes_version}")
+                self.deepeyes_tool = DeepEyesTool(config=deepeyes_config)
+                logger.info(f"New DeepEyes tool initialized")
             except Exception as e:
                 logger.error(f"Failed to initialize DeepEyes tool: {e}")
                 self.deepeyes_tool = None
         
-        # Initialize Grounding DINO tool
+        self.inter_gps_tool = None
+        if self.enable_inter_gps:
+            try:
+                from vlm_gym.environments.tools.inter_gps_tool import InterGPSTool
+                config = inter_gps_config or {}
+                self.inter_gps_tool = InterGPSTool(config)
+                logger.info("Inter-GPS tool initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize Inter-GPS tool: {e}")
+                self.inter_gps_tool = None
+            
+        
+        # 初始化Grounding DINO工具
         self.grounding_dino_tool = None
         if self.enable_grounding_dino:
             try:
-                config = grounding_dino_config or {}
-                self.grounding_dino_tool = GroundingDINOTool(config)
+                # 构建正确的配置
+                grounding_dino_config = {
+                    'model_path': '/data/wang/meng/GYM-Work/vlm_gym-tool-usage-mathvista/GroundingDINO/groundingdino_swint_ogc.pth',
+                    'model_config': '/data/wang/meng/GYM-Work/vlm_gym-tool-usage-mathvista/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py',
+                    'device': 'cpu',  # 使用CPU模式
+                    'box_threshold': 0.35,
+                    'text_threshold': 0.25,
+                    'nms_threshold': 0.8
+                }
+                
+                # 如果有传入的配置，合并它们
+                if grounding_dino_config:
+                    grounding_dino_config.update(grounding_dino_config)
+                
+                print(f"[DEBUG] Initializing GroundingDINO with config: {grounding_dino_config}")
+                
+                self.grounding_dino_tool = GroundingDINOTool(grounding_dino_config)
                 logger.info("Grounding DINO tool initialized")
-                # ⭐ Added debug output
-                print(f"[DEBUG] Grounding DINO tool initialized: {self.grounding_dino_tool}")
-                print(f"[DEBUG] Tool type: {type(self.grounding_dino_tool)}")
+                print(f"[DEBUG] Grounding DINO tool initialized successfully")
+                
             except Exception as e:
                 logger.error(f"Failed to initialize Grounding DINO tool: {e}")
-                # ⭐ Added detailed error info
-                print(f"[DEBUG] ❌ Grounding DINO initialization failed:")
-                print(f"  - Error type: {type(e).__name__}")
-                print(f"  - Error message: {str(e)}")
+                print(f"[DEBUG] ❌ Grounding DINO initialization failed: {e}")
                 import traceback
                 traceback.print_exc()
                 self.grounding_dino_tool = None
         
-        # Initialize ChartMoE tool
+        # 初始化SAM2工具
+        self.sam2_tool = None
+        if self.enable_sam2:
+            try:
+                config = sam2_config or {}
+                self.sam2_tool = SAM2Tool(config)
+                logger.info("SAM2 tool initialized")
+                print(f"[DEBUG] SAM2 tool initialized: {self.sam2_tool}")
+                print(f"[DEBUG] Tool type: {type(self.sam2_tool)}")
+            except Exception as e:
+                logger.error(f"Failed to initialize SAM2 tool: {e}")
+                print(f"[DEBUG] ❌ SAM2 initialization failed:")
+                print(f"  - Error type: {type(e).__name__}")
+                print(f"  - Error message: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                self.sam2_tool = None
+        
+        #  初始化SympyGeometry工具
+        self.sympy_geometry_tool = None
+        if self.enable_sympy_geometry:
+            try:
+                config = sympy_geometry_config or {}
+                self.sympy_geometry_tool = SympyGeometryTool(config)
+                logger.info("SymPy Geometry tool initialized")
+                print(f"[DEBUG] SymPy Geometry tool initialized: {self.sympy_geometry_tool}")
+                print(f"[DEBUG] Tool type: {type(self.sympy_geometry_tool)}")
+            except Exception as e:
+                logger.error(f"Failed to initialize SymPy Geometry tool: {e}")
+                print(f"[DEBUG] ❌ SymPy Geometry initialization failed:")
+                print(f"  - Error type: {type(e).__name__}")
+                print(f"  - Error message: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                self.sympy_geometry_tool = None
+        
+        
+        # 初始化 MultiMath Server 工具
+        self.multimath_server_tool = None
+        if enable_multimath_server:  # 注意这里不要用 self.enable_multimath_server
+            try:
+                config = multimath_server_config or {}
+                self.multimath_server_tool = MultiMathRemoteTool(config)
+                logger.info("MultiMath Server tool initialized")
+                print(f"[DEBUG] MultiMath Server tool initialized: {self.multimath_server_tool}")
+            except Exception as e:
+                logger.error(f"Failed to initialize MultiMath Server tool: {e}")
+                print(f"[DEBUG] ❌ MultiMath Server initialization failed:")
+                import traceback
+                traceback.print_exc()
+                self.multimath_server_tool = None
+        
+        
+        # 初始化ChartMoE工具
         self.chartmoe_tool = None
         if self.enable_chartmoe:
             try:
-                # ⭐ Modified: Use your FixedChartMoETool
-                from chartmoe_vlmgym_tool import ChartMoETool
+                # ⭐ 修改：使用你的 FixedChartMoETool
+                from chartmoe_vlmgym_tool import FixedChartMoETool
                 config = chartmoe_config or {}
-                self.chartmoe_tool = ChartMoETool(config)
+                self.chartmoe_tool = FixedChartMoETool(config)
                 logger.info("ChartMoE tool initialized")
                 print(f"[DEBUG] ChartMoE tool initialized: {self.chartmoe_tool}")
                 print(f"[DEBUG] Tool type: {type(self.chartmoe_tool)}")
@@ -138,7 +249,65 @@ class VisionQAEnv:
                 traceback.print_exc()
                 self.chartmoe_tool = None
         
-        # Tool manager
+        # 初始化 DiagramFormalizer 工具
+        self.diagram_formalizer_tool = None
+        if self.enable_diagram_formalizer:
+            try:
+                from vlm_gym.environments.tools.geometry_tools.diagram_formalizer import DiagramFormalizerTool
+                config = diagram_formalizer_config or {}
+                self.diagram_formalizer_tool = DiagramFormalizerTool(config)
+                logger.info("DiagramFormalizer tool initialized")
+                print(f"[DEBUG] DiagramFormalizer tool initialized: {self.diagram_formalizer_tool}")
+                print(f"[DEBUG] Tool type: {type(self.diagram_formalizer_tool)}")
+            except Exception as e:
+                logger.error(f"Failed to initialize DiagramFormalizer tool: {e}")
+                print(f"[DEBUG] ❌ DiagramFormalizer initialization failed:")
+                print(f"  - Error type: {type(e).__name__}")
+                print(f"  - Error message: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                self.diagram_formalizer_tool = None
+        
+        # 初始化EasyOCR工具
+        self.easyocr_tool = None
+        if self.enable_easyocr:
+            try:
+                config = easyocr_config or {}
+                self.easyocr_tool = EasyOCRTool(config)
+                logger.info("EasyOCR tool initialized")
+                print(f"[DEBUG] EasyOCR tool initialized: {self.easyocr_tool}")
+                print(f"[DEBUG] Tool type: {type(self.easyocr_tool)}")
+            except Exception as e:
+                logger.error(f"Failed to initialize EasyOCR tool: {e}")
+                print(f"[DEBUG] ❌ EasyOCR initialization failed:")
+                print(f"  - Error type: {type(e).__name__}")
+                print(f"  - Error message: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                self.easyocr_tool = None
+        
+        #初始化multimath工具
+        #self.multimath_tool = None
+        #if self.enable_multimath:
+        #    try:
+        #        config = multimath_config or {}
+                # 设置默认模型路径
+        #        if 'model_path' not in config:
+        #            config['model_path'] = "./checkpoints/multimath-7b-llava-v1.5"
+        #        self.multimath_tool = MultiMathTool(config)
+        #        logger.info("MultiMath tool initialized")
+        #        print(f"[DEBUG] MultiMath tool initialized: {self.multimath_tool}")
+        #        print(f"[DEBUG] Tool type: {type(self.multimath_tool)}")
+        #    except Exception as e:
+        #        logger.error(f"Failed to initialize MultiMath tool: {e}")
+        #        print(f"[DEBUG] ❌ MultiMath initialization failed:")
+        #        print(f"  - Error type: {type(e).__name__}")
+        #        print(f"  - Error message: {str(e)}")
+        #        import traceback
+        #        traceback.print_exc()
+        #        self.multimath_tool = None
+        
+        # 工具管理器
         self.tool_manager = {}
         if self.deepeyes_tool:
             self.tool_manager['deepeyes'] = self.deepeyes_tool
@@ -146,50 +315,56 @@ class VisionQAEnv:
             self.tool_manager['grounding_dino'] = self.grounding_dino_tool
         if self.chartmoe_tool:
             self.tool_manager['chartmoe'] = self.chartmoe_tool
-        
+        if self.diagram_formalizer_tool:
+            self.tool_manager['diagram_formalizer'] = self.diagram_formalizer_tool
+        if self.easyocr_tool:
+            self.tool_manager['easyocr'] = self.easyocr_tool
+        if self.inter_gps_tool:
+            self.tool_manager['inter_gps'] = self.inter_gps_tool
+        if self.sam2_tool:
+            self.tool_manager['sam2'] = self.sam2_tool
+        if self.sympy_geometry_tool:
+            self.tool_manager['sympy_geometry'] = self.sympy_geometry_tool
+        #if self.multimath_tool:
+        #    self.tool_manager['multimath'] = self.multimath_tool
+        if self.multimath_server_tool:
+            self.tool_manager['multimath_server'] = self.multimath_server_tool
+            
         logger.info(f"Registered tools: {list(self.tool_manager.keys())}")
         
-        # Initialize chat manager
+        # 初始化聊天管理器
         self.chat = SimpleChatManager()
         
-        # Environment state
+        # 环境状态
         self.current_step = 0
         self.task = None
         self.start_time = None
         
-        # Current image and question (managed by the environment)
+        # 当前图像和问题（由环境管理）
         self.current_image = None
         self.current_question = ""
         self.task_goal = ""
         self.task_info = {}
-        self.action_history = []  # Record executed actions
+        self.action_history = []  # 记录执行的动作
         
-        # DeepEyes-related state
-        self.deepeyes_initialized = False
-        self.deepeyes_interaction_count = 0
+        # 任务入口点（由外部设置）
+        self.task_entrypoint = task_entrypoint
         
-        # Task entry point (set externally)
-        self.task_entrypoint = None
-        
-        # ⭐ New: Store pending tool feedback
+        # ⭐ 新增：存储待处理的工具反馈
         self.pending_tool_feedback = None
         self.requires_tool_response = False
         
     def get_available_tools(self) -> Dict[str, Dict[str, Any]]:
-        """Get list of available tools (for agent queries)"""
+        """获取可用工具列表（供Agent查询）"""
         available_tools = {}
         
-        # DeepEyes tool
+        # 新DeepEyes工具
         if self.deepeyes_tool and self.enable_deepeyes_tools:
-            available_tools['deepeyes'] = {
-                "name": "deepeyes",
-                "description": "DeepEyes visual processing tool",
-                "initialized": self.deepeyes_initialized
-            }
+            available_tools['deepeyes'] = self.deepeyes_tool.get_capabilities()
         
-        # Grounding DINO tool
+        # Grounding DINO工具
         if self.grounding_dino_tool and self.enable_grounding_dino:
-            # ⭐ Modified: Add default capability info if tool doesn't have get_capabilities method
+            # ⭐ 修改：添加默认的能力信息，如果工具没有 get_capabilities 方法
             if hasattr(self.grounding_dino_tool, 'get_capabilities'):
                 available_tools['grounding_dino'] = self.grounding_dino_tool.get_capabilities()
             else:
@@ -199,9 +374,9 @@ class VisionQAEnv:
                     "capabilities": ["object_detection", "phrase_grounding"]
                 }
         
-        # ChartMoE tool
+        # ChartMoE工具
         if self.chartmoe_tool and self.enable_chartmoe:
-            # ⭐ Modified: Add default capability info
+            # ⭐ 修改：添加默认的能力信息
             if hasattr(self.chartmoe_tool, 'get_capabilities'):
                 available_tools['chartmoe'] = self.chartmoe_tool.get_capabilities()
             else:
@@ -220,28 +395,158 @@ class VisionQAEnv:
                     }
                 }
         
+        # SAM2工具
+        if self.sam2_tool and self.enable_sam2:
+            if hasattr(self.sam2_tool, 'get_capabilities'):
+                available_tools['sam2'] = self.sam2_tool.get_capabilities()
+            else:
+                available_tools['sam2'] = {
+                    "name": "sam2",
+                    "description": "Segment images based on point, box or smart medical prompts",
+                    "capabilities": ["point_segment", "box_segment", "multi_point_segment", "smart_medical_segment"],
+                    "tasks": {
+                        "point_segment": "Segment using point prompts",
+                        "box_segment": "Segment using box prompts",
+                        "multi_point_segment": "Segment using multiple points",
+                        "smart_medical_segment": "Smart segmentation for medical images",
+                        "mixed_segment": "Segment using mixed prompts (points + box)",
+                        "grid_search_segment": "Find best segmentation using grid search",
+                        "everything_segment": "Segment all possible objects"
+                    }
+                }
+        
+        # DiagramFormalizer 工具
+        if self.diagram_formalizer_tool and self.enable_diagram_formalizer:
+            if hasattr(self.diagram_formalizer_tool, 'get_capabilities'):
+                available_tools['diagram_formalizer'] = self.diagram_formalizer_tool.get_capabilities()
+            else:
+                available_tools['diagram_formalizer'] = {
+                    "name": "diagram_formalizer",
+                    "description": "Formalize geometric problems into mathematical expressions",
+                    "capabilities": ["formalize", "solve", "analyze", "extract_constraints", "prove"],
+                    "tasks": {
+                        "formalize": "Convert geometric problems to formal notation",
+                        "solve": "Solve geometric problems step by step",
+                        "analyze": "Analyze geometric relationships",
+                        "extract_constraints": "Extract geometric constraints",
+                        "prove": "Generate formal proofs"
+                    }
+                }
+        
+        # SymPy几何工具
+        if self.sympy_geometry_tool and self.enable_sympy_geometry:
+            if hasattr(self.sympy_geometry_tool, 'get_capabilities'):
+                available_tools['sympy_geometry'] = self.sympy_geometry_tool.get_capabilities()
+            else:
+                available_tools['sympy_geometry'] = {
+                    "name": "sympy_geometry",
+                    "description": "Precise geometric calculation tool supporting triangles, circles, polygons",
+                    "capabilities": [
+                        "triangle_angle_calculation",
+                        "circle_calculations", 
+                        "polygon_area_perimeter",
+                        "geometric_relationships",
+                        "coordinate_calculations"
+                    ],
+                    "functions": {
+                        "triangle_angle": "Calculate triangle interior angles",
+                        "triangle_area": "Calculate triangle area and perimeter",
+                        "pythagorean": "Pythagorean theorem calculations",
+                        "circle_from_points": "Determine circle from three points",
+                        "polygon_area": "Calculate polygon area",
+                        "angle_between_lines": "Calculate angle between lines"
+                    }
+                }
+        
+        # EasyOCR工具
+        if self.easyocr_tool and self.enable_easyocr:
+            if hasattr(self.easyocr_tool, 'get_capabilities'):
+                available_tools['easyocr'] = self.easyocr_tool.get_capabilities()
+            else:
+                available_tools['easyocr'] = {
+                    "name": "easyocr",
+                    "description": "Text detection and recognition tool with multi-language support",
+                    "capabilities": ["text_detection", "text_recognition", "multi_language", "math_symbols", "table_extraction"],
+                    "tasks": {
+                        "detect_and_recognize": "Detect and recognize all text in image",
+                        "detect_only": "Only detect text regions without recognition",
+                        "recognize_only": "Only recognize text content",
+                        "extract_math": "Extract mathematical content",
+                        "extract_table": "Extract table structure and content",
+                        "extract_by_region": "Extract text from specific region"
+                    }
+                }
+        
+        
+        # MultiMath Server 工具
+        if self.multimath_server_tool and self.enable_multimath_server:
+            available_tools['multimath_server'] = {
+                "name": "multimath_server",
+                "description": "Remote multimodal math problem solver using MultiMath-7B API",
+                "capabilities": [
+                    "solve_math_problems",
+                    "analyze_problem_structure", 
+                    "explain_solution_steps",
+                    "handle_geometry_problems",
+                    "handle_algebra_problems",
+                    "handle_word_problems"
+                ],
+                "tasks": {
+                    "solve": "Solve math problems with or without images",
+                    "analyze": "Analyze problem structure and identify key concepts",
+                    "explain": "Generate detailed step-by-step explanations"
+                },
+                "problem_types": ["geometry", "algebra", "word_problem", "graph", "table", "general"],
+                "output_formats": ["answer_only", "with_steps", "detailed"]
+            }
+        
+        
+        # MultiMath工具
+        #if self.multimath_tool and self.enable_multimath:
+        #    if hasattr(self.multimath_tool, 'get_capabilities'):
+        #        available_tools['multimath'] = self.multimath_tool.get_capabilities()
+        #    else:
+        #        available_tools['multimath'] = {
+        #            "name": "multimath",
+        #            "description": "Multimodal math problem solver using MultiMath-7B",
+        #            "capabilities": [
+        #                "solve_math_problems",
+        #                "analyze_problem_structure", 
+        #                "explain_solution_steps",
+        #                "handle_geometry_problems",
+        #                "handle_algebra_problems",
+        #                "handle_word_problems"
+        #            ],
+        #            "tasks": {
+        #                "solve": "Solve math problems with or without images",
+        #                "analyze": "Analyze problem structure and identify key concepts",
+        #                "explain": "Generate detailed step-by-step explanations"
+        #            },
+        #            "problem_types": ["geometry", "algebra", "word_problem", "graph", "table", "general"],
+        #            "output_formats": ["answer_only", "with_steps", "detailed"]
+        #        }
+        
         return available_tools
     
+    
     def reset(self, task_id: str = None, **kwargs) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """Reset the environment"""
-        # Reset state
+        """重置环境"""
+        # 重置状态
         self.current_step = 0
         self.start_time = time.time()
         self.chat.clear()
         self.action_history = []
-        self.deepeyes_initialized = False
-        self.deepeyes_interaction_count = 0
         
-        # ⭐ Reset tool feedback state
+        # ⭐ 重置工具反馈状态
         self.pending_tool_feedback = None
         self.requires_tool_response = False
         
-        # Create task instance
+        # 创建任务实例
         if not self.task_entrypoint:
             raise ValueError("task_entrypoint not set. Please set env.task_entrypoint before reset.")
         
         try:
-            # Prepare task arguments, pass action_set to task (if enabled)
+            # 准备任务参数，传递action_set给任务（如果启用）
             task_kwargs = self.task_kwargs.copy()
             if self.enable_actions:
                 task_kwargs['action_set'] = self.action_set
@@ -255,7 +560,7 @@ class VisionQAEnv:
             logger.error(f"Failed to create task {task_id}: {e}")
             raise
         
-        # Set up task
+        # 设置任务
         try:
             self.task_goal, self.task_info = self.task.setup()
             logger.debug(f"Task {task_id} setup complete")
@@ -263,30 +568,22 @@ class VisionQAEnv:
             logger.error(f"Failed to setup task {task_id}: {e}")
             raise
         
-        # Load image
+        # 加载图像
         self._load_current_image()
         
-        # Set current question
+        # 设置当前问题
         task_data = self.task.task_data
         self.current_question = task_data.get("question", "")
         
-        # Initialize DeepEyes tool (if enabled)
+        # 初始化新DeepEyes工具（如果启用）
         if self.deepeyes_tool and self.current_image:
             try:
-                raw_prompt = [{
-                    "role": "user",
-                    "content": self.current_question
-                }]
-                origin_multi_modal_data = {"image": [self.current_image]}
-                
-                self.deepeyes_tool.reset(raw_prompt, None, origin_multi_modal_data)
-                self.deepeyes_initialized = True
+                self.deepeyes_tool.reset(self.current_image)
                 logger.debug("DeepEyes tool reset successfully")
             except Exception as e:
                 logger.error(f"Failed to reset DeepEyes tool: {e}")
-                self.deepeyes_initialized = False
         
-        # Initialize Grounding DINO tool (if enabled)
+        # 初始化Grounding DINO工具（如果启用）
         if self.grounding_dino_tool and self.current_image:
             try:
                 self.grounding_dino_tool.reset(self.current_image)
@@ -294,7 +591,35 @@ class VisionQAEnv:
             except Exception as e:
                 logger.error(f"Failed to reset Grounding DINO tool: {e}")
         
-        # Initialize ChartMoE tool (if enabled)
+        # 初始化SAM2工具（如果启用）
+        if self.sam2_tool and self.current_image:
+            try:
+                self.sam2_tool.reset(self.current_image)
+                logger.debug("SAM2 tool reset successfully")
+            except Exception as e:
+                logger.error(f"Failed to reset SAM2 tool: {e}")
+        
+        # 初始化SymPy几何工具（如果启用）
+        if self.sympy_geometry_tool:
+            try:
+                # SymPy工具不需要图像，但可以传入上下文
+                self.sympy_geometry_tool.reset()
+                logger.debug("SymPy Geometry tool reset successfully")
+            except Exception as e:
+                logger.error(f"Failed to reset SymPy Geometry tool: {e}")
+        
+        
+        # 初始化 MultiMath Server 工具（如果启用）
+        if self.multimath_server_tool:
+            try:
+                # MultiMath Server 是远程API，只需要重置状态
+                self.multimath_server_tool.reset(self.current_image)
+                logger.debug("MultiMath Server tool reset successfully")
+            except Exception as e:
+                logger.error(f"Failed to reset MultiMath Server tool: {e}")
+                
+        
+        # 初始化ChartMoE工具（如果启用）
         if self.chartmoe_tool and self.current_image:
             try:
                 self.chartmoe_tool.reset(self.current_image)
@@ -302,7 +627,24 @@ class VisionQAEnv:
             except Exception as e:
                 logger.error(f"Failed to reset ChartMoE tool: {e}")
         
-        # Add initial system message
+        # 初始化 DiagramFormalizer 工具（如果启用）
+        if self.diagram_formalizer_tool:
+            try:
+                # DiagramFormalizer 主要处理文本，可以选择性传入图像
+                self.diagram_formalizer_tool.reset(self.current_image)
+                logger.debug("DiagramFormalizer tool reset successfully")
+            except Exception as e:
+                logger.error(f"Failed to reset DiagramFormalizer tool: {e}")
+        
+        # 初始化EasyOCR工具（如果启用）
+        if self.easyocr_tool and self.current_image:
+            try:
+                self.easyocr_tool.reset(self.current_image)
+                logger.debug("EasyOCR tool reset successfully")
+            except Exception as e:
+                logger.error(f"Failed to reset EasyOCR tool: {e}")
+        
+        # 添加初始系统消息
         self.chat.add_message(
             role="system",
             content={
@@ -311,10 +653,10 @@ class VisionQAEnv:
             }
         )
         
-        # Build observation
+        # 构建观察
         observation = self._get_obs()
         
-        # Build info (includes action space description)
+        # 构建信息（包含动作空间描述）
         info = {
             "task_id": task_id,
             "task_goal": self.task_goal,
@@ -322,10 +664,15 @@ class VisionQAEnv:
             "max_steps": self.max_steps,
             "time_limit": self.time_limit,
             "actions_enabled": self.enable_actions,
-            "deepeyes_enabled": self.enable_deepeyes_tools and self.deepeyes_initialized,
+            "deepeyes_enabled": self.enable_deepeyes_tools and self.deepeyes_tool is not None,
             "grounding_dino_enabled": self.enable_grounding_dino and self.grounding_dino_tool is not None,
             "chartmoe_enabled": self.enable_chartmoe and self.chartmoe_tool is not None,
-            "available_tools": self.get_available_tools()
+            "diagram_formalizer_enabled": self.enable_diagram_formalizer and self.diagram_formalizer_tool is not None,
+            "easyocr_enabled": self.enable_easyocr and self.easyocr_tool is not None,
+            "sam2_enabled": self.enable_sam2 and self.sam2_tool is not None,
+            "sympy_geometry_enabled": self.enable_sympy_geometry and self.sympy_geometry_tool is not None,
+            "available_tools": self.get_available_tools(),
+            "multimath_server_enabled": self.enable_multimath_server and self.multimath_server_tool is not None,
         }
         
         if self.enable_actions:
@@ -334,150 +681,420 @@ class VisionQAEnv:
         
         return observation, info
     
-    def step(self, action: str) -> Tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]:
-
-        """Execute one step and return observation, reward, done status, etc."""
-        
-        if not self.task:
-            raise RuntimeError("Environment not reset. Call reset() first.")
-        
-        self.current_step += 1
-        
-        # ===== Added debug output =====
-        print(f"\n[DEBUG VisionQAEnv.step] Step {self.current_step}")
-        print(f"[DEBUG VisionQAEnv.step] Action type: {type(action)}")
-        print(f"[DEBUG VisionQAEnv.step] Action length: {len(str(action))}")
-        print(f"[DEBUG VisionQAEnv.step] Action preview: {str(action)[:200]}...")
-        print(f"[DEBUG VisionQAEnv.step] Contains <tool_call>: {'<tool_call>' in str(action)}")
-        print(f"[DEBUG VisionQAEnv.step] DeepEyes enabled: {self.enable_deepeyes_tools}")
-        print(f"[DEBUG VisionQAEnv.step] DeepEyes initialized: {self.deepeyes_initialized}")
-        print(f"[DEBUG VisionQAEnv.step] Grounding DINO enabled: {self.enable_grounding_dino}")
-        print(f"[DEBUG VisionQAEnv.step] ChartMoE enabled: {self.enable_chartmoe}")
     
+    def validate_format(self, response: str) -> Tuple[bool, str]:
+        """
+        验证响应格式是否正确
+        Args:
+            response: 模型的响应文本
+        Returns:
+            (is_valid, error_message)
+        """
+        if not response or not isinstance(response, str):
+            return False, "Empty or invalid response"
         
-        # Check if timed out
-        truncated = False
-        if self.time_limit and (time.time() - self.start_time) > self.time_limit:
-            truncated = True
+        response_lower = response.lower()
         
-        # Check if maximum steps exceeded
-        if self.current_step > self.max_steps:
-            truncated = True
+        # 检查 XML 格式
+        has_xml_answer = '<answer>' in response_lower
+        has_xml_reasoning = '<reasoning>' in response_lower
+        has_xml_think = '<think>' in response_lower  # ← 添加对<think>的检查
         
-        # Record user action
-        self.chat.add_message(
-            role="user",
-            content={
-                "text": action,
-                "step": self.current_step
-            }
-        )
+        # 检查 Markdown 格式
+        has_md_answer = '## final_answer:' in response_lower or '##final_answer:' in response_lower
+        has_md_reasoning = '## reasoning:' in response_lower or '##reasoning:' in response_lower
         
-        # Execute action
+        # 如果是工具调用，不需要检查格式
+        if '<tool_call>' in response:
+            return True, "Tool call format"
+        
+        # 至少需要一种格式的答案标记
+        if not has_xml_answer and not has_md_answer:
+            if has_xml_reasoning:
+                return False, "Found <reasoning> but missing <answer> tag. You must include <answer>your_answer</answer>"
+            elif has_xml_think:  # ← 添加对<think>的错误提示
+                return False, "Found <think> but missing <answer> tag. You must include <answer>your_answer</answer>"
+            elif has_md_reasoning:
+                return False, "Found ## REASONING: but missing ## FINAL_ANSWER: section. Both sections are required!"
+            else:
+                # ← 修改错误提示，包含<think>格式
+                return False, "Invalid format. Use either <think>...</think><answer>...</answer> OR <reasoning>...</reasoning><answer>...</answer> OR ## REASONING: ... ## FINAL_ANSWER: ..."
+        
+        return True, "Format is valid"
+    
+    
+    
+    def _clear_tool_feedback(self):
+        """清空工具反馈 - 应该在Agent处理完反馈后调用"""
+        if self.pending_tool_feedback is not None and isinstance(self.pending_tool_feedback, dict):
+            print(f"[DEBUG] Clearing tool feedback for tool: {self.pending_tool_feedback.get('tool', 'unknown')}")
+        self.pending_tool_feedback = None
+        self.requires_tool_response = False
+    
+    
+    def step(self, action: str) -> Tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]:
+        """执行一步动作并返回观察、奖励、是否结束等信息"""
+        
         try:
-            action_result = self._execute_action(action)
-            logger.debug(f"Action executed: {action_result.get('type', 'unknown')}")
+            if not self.task:
+                raise RuntimeError("Environment not reset. Call reset() first.")
             
-            # Record action history
+            self.current_step += 1
+            
+            # 检查是否超时
+            truncated = False
+            if self.time_limit and (time.time() - self.start_time) > self.time_limit:
+                truncated = True
+            
+            # 检查是否超过最大步数
+            if self.current_step > self.max_steps:
+                truncated = True
+            
+            # 记录用户动作
+            self.chat.add_message(
+                role="user",
+                content={
+                    "text": action,
+                    "step": self.current_step
+                }
+            )
+            
+            # 执行动作
+            try:
+                action_result = self._execute_action(action)
+                logger.debug(f"Action executed: {action_result.get('type', 'unknown')}")
+                
+                # ⭐ 添加调试
+                print(f"\n[DEBUG] Before _handle_task_validation:")
+                print(f"  - action_result type: {action_result.get('type')}")
+                print(f"  - action_result status: {action_result.get('status')}")
+                
+                # ===== 新增：格式验证 =====
+                # 只对答案类型的响应进行格式验证
+                if action_result.get("type") == "answer" or (
+                    action_result.get("type") == "direct_answer" and 
+                    hasattr(self.task, 'use_structured_output') and 
+                    self.task.use_structured_output
+                ):
+                    format_valid, format_error = self.validate_format(action)
+                    
+                    if not format_valid and hasattr(self.task, 'enable_reflection') and self.task.enable_reflection:
+                        # 格式错误，触发反思
+                        self.task.last_format_error = format_error  # 传递给task
+                        
+                        # 修改action_result以表示格式错误
+                        action_result = {
+                            "type": "format_error",
+                            "status": "FAILED",
+                            "content": format_error,
+                            "error": format_error,
+                            "original_action": action
+                        }
+                # ===== 格式验证结束 =====
+                
+            except Exception as e:
+                logger.error(f"Action execution failed: {e}")
+                action_result = {
+                    "type": "error",
+                    "status": "FAILED",
+                    "content": str(e),
+                    "error": str(e)
+                }
+            
+            # ⭐ 现在可以安全使用 action_result - 如果这是对工具反馈的响应，清空反馈
+            if self.requires_tool_response and self.pending_tool_feedback is not None:
+                is_new_tool_call = '<tool_call>' in str(action) or action_result.get("type") == "tool_call"
+                if not is_new_tool_call:
+                    print(f"\n[DEBUG] Agent responded to tool feedback, clearing pending feedback")
+                    self._clear_tool_feedback()
+            
+            # 记录动作历史
             self.action_history.append({
                 "step": self.current_step,
                 "action": action,
                 "result": action_result
             })
             
-        except Exception as e:
-            logger.error(f"Action execution failed: {e}")
-            action_result = {
-                "type": "error",
-                "status": "FAILED",
-                "content": str(e),
-                "error": str(e)
-            }
-        
-        # Record assistant reply
-        self.chat.add_message(
-            role="assistant", 
-            content=action_result
-        )
-        
-        # Handle task validation
-        reward, done, message, validation_info = self._handle_task_validation(
-            action, action_result
-        )
-        
-        # If truncated but not done, set done status
-        if truncated and not done:
-            done = True
-            if reward == 0:
-                reward = -0.1  # Slight penalty
-            message = f"Task truncated: {message}"
-        
-        # ⭐ Modified: Set tool feedback before getting observation
-        if action_result.get("type") in ["deepeyes_feedback", "tool_result"]:
-            self.requires_tool_response = True
-
-            # Special handling for Grounding DINO
-            if action_result.get("tool") == "grounding_dino":
-                self.pending_tool_feedback = {
-                    "tool": "grounding_dino",
-                    "detections": action_result.get("detections", {}),
-                    "original_question": self.current_question,
-                    "query": action_result.get("query", ""),  # Add query term
-                    "num_detections": action_result.get("detections", {}).get("num_detections", 0)
-                }
-                print(f"\n[DEBUG VisionQAEnv.step] Set pending Grounding DINO feedback:")
-                print(f"  - num_detections: {self.pending_tool_feedback['num_detections']}")
-                print(f"  - requires_tool_response: {self.requires_tool_response}")
+            # 记录助手回复
+            self.chat.add_message(
+                role="assistant", 
+                content=action_result
+            )
             
-            # Special handling for ChartMoE
-            elif action_result.get("tool") == "chartmoe":
-                self.pending_tool_feedback = {
-                    "tool": "chartmoe",
-                    "task_type": action_result.get("task_type", "unknown"),
-                    "output": action_result.get("output", {}),
-                    "original_question": self.current_question,
-                    "result": action_result.get("result", {})
-                }
-                print(f"\n[DEBUG VisionQAEnv.step] Set pending ChartMoE feedback:")
-                print(f"  - task_type: {self.pending_tool_feedback['task_type']}")
-                print(f"  - output: {self.pending_tool_feedback.get('output', 'N/A')}")
-                print(f"  - requires_tool_response: {self.requires_tool_response}")
+            # 处理任务验证
+            print(f"\n[DEBUG] Calling _handle_task_validation...")
+            result = self._handle_task_validation(action, action_result)
+            print(f"[DEBUG] _handle_task_validation returned: {type(result)}, length: {len(result) if result else 'None'}")
             
-            # Special handling for DeepEyes
-            elif action_result.get("type") == "deepeyes_feedback":
-                self.pending_tool_feedback = action_result.get("tool_feedback", {})
-                print(f"\n[DEBUG VisionQAEnv.step] Set pending DeepEyes feedback:")
-                print(f"  - has_observation: {'observation' in self.pending_tool_feedback}")
-                print(f"  - has_processed_images: {len(action_result.get('processed_images', []))}")
-                print(f"  - requires_tool_response: {self.requires_tool_response}")
-                
+            if result is None:
+                print(f"[ERROR] _handle_task_validation returned None!")
+                # 提供默认值
+                reward, done, message, validation_info = -0.1, True, "Validation failed", {"error": "Validation returned None"}
             else:
-                self.pending_tool_feedback = action_result.get("tool_feedback", action_result.get("result", {}))
-        
-        # Build observation (now includes tool feedback)
-        observation = self._get_obs()
-        
-        # Build info
-        info = {
-            "step": self.current_step,
-            "action_result": action_result,
-            "validation": validation_info,
-            "message": message,
-            "truncated": truncated,
-            "chat_history": self.chat.get_history(),
-            "action_history": self.action_history
-        }
-        
-        if self.enable_deepeyes_tools:
-            info["deepeyes_interactions"] = self.deepeyes_interaction_count
-        
-        return observation, reward, done, truncated, info
+                reward, done, message, validation_info = result
+            
+            print(f"[DEBUG] Unpacked validation result: reward={reward}, done={done}, message={message[:50]}...")
+            
+            # 如果截断了但还没完成，设置完成状态
+            if truncated and not done:
+                done = True
+                if reward == 0:
+                    reward = -0.1  # 轻微惩罚
+                message = f"Task truncated: {message}"
+            
+            # ⭐ 修改：在获取观察之前设置工具反馈
+            if action_result.get("type") in ["deepeyes_feedback", "tool_result"]:
+                # ⭐ 关键修改：只有在不同工具冲突时才清空
+                if (self.pending_tool_feedback is not None 
+                    and self.pending_tool_feedback.get("tool") != action_result.get("tool")):
+                    print(f"[WARNING] Overwriting unprocessed tool feedback from {self.pending_tool_feedback.get('tool')} to {action_result.get('tool')}")
+                    self._clear_tool_feedback()
+                
+                self.requires_tool_response = True
+
+                # 对DeepEyes特殊处理
+                if action_result.get("tool") == "deepeyes":
+                    self.pending_tool_feedback = {
+                        "tool": "deepeyes",
+                        "tool_used": action_result.get("tool_used"),
+                        "result": action_result.get("result", {}),
+                        "processed_output": action_result.get("processed_output", ""),
+                        "success": action_result.get("success", False)
+                    }
+                    if "image" in action_result:
+                        self.pending_tool_feedback["has_processed_image"] = True
+                    print(f"\n[DEBUG VisionQAEnv.step] Set pending DeepEyes feedback")
+
+                elif action_result.get("tool") == "inter_gps":
+                    self.pending_tool_feedback = {
+                        "tool": "inter_gps",
+                        "solution": action_result.get("solution", ""),
+                        "method": action_result.get("method", "Inter-GPS"),
+                        "success": action_result.get("status") == "SUCCESS",
+                        "result": action_result.get("result", {}),
+                        "equations": action_result.get("result", {}).get("equations", []),
+                        "constraints": action_result.get("result", {}).get("constraints", {})
+                    }
+                    
+                    print(f"\n[DEBUG VisionQAEnv.step] Set pending Inter-GPS feedback:")
+                    print(f"  - solution: {self.pending_tool_feedback['solution']}")
+                    print(f"  - method: {self.pending_tool_feedback['method']}")
+                    print(f"  - requires_tool_response: {self.requires_tool_response}")
+                
+                
+                elif action_result.get("tool") == "sam2":
+                    self.pending_tool_feedback = {
+                        "tool": "sam2",
+                        "task": action_result.get("task", "unknown"),
+                        "num_masks": action_result.get("num_masks", 0),
+                        "results": action_result.get("results", []),
+                        "original_question": self.current_question,
+                        "success": action_result.get("success", False),
+                        "detected_organ": action_result.get("detected_organ", None),
+                        "best_result": action_result.get("best_result", None)
+                    }
+                    
+                    print(f"\n[DEBUG VisionQAEnv.step] Set pending SAM2 feedback:")
+                    print(f"  - task: {self.pending_tool_feedback['task']}")
+                    print(f"  - num_masks: {self.pending_tool_feedback['num_masks']}")
+                    print(f"  - results count: {len(self.pending_tool_feedback['results'])}")
+                    print(f"  - requires_tool_response: {self.requires_tool_response}")
+                
+                
+                # 对Grounding DINO特殊处理
+                elif action_result.get("tool") == "grounding_dino":
+                    # 优先从 detections 中获取（已经整理好的数据）
+                    detections = action_result.get("detections", {})
+                    # 如果 detections 为空，尝试从 result 中获取
+                    if not detections and action_result.get("result"):
+                        result = action_result.get("result", {})
+                        detections = {
+                            "boxes": result.get("boxes", []),
+                            "phrases": result.get("phrases", []),
+                            "logits": result.get("logits", []),
+                            "num_detections": result.get("num_detections", 0),
+                            "size": result.get("size", [])
+                        }
+                    
+                    # 获取图像路径（注意：vision_qa_env 中没有 current_image_path 属性）
+                    image_path = ""
+                    if self.task and self.task.task_data:
+                        image_path = str(self.task.task_data.get("image_path", ""))
+                        # 如果是相对路径，转换为绝对路径
+                        if image_path and not os.path.isabs(image_path):
+                            image_path = str(self.dataset_path / image_path)
+                    
+                    self.pending_tool_feedback = {
+                        "tool": "grounding_dino",
+                        "original_question": self.current_question,
+                        "query": action_result.get("query", ""),
+                        
+                        # 原始图像路径（这是关键！）
+                        "original_image_path": image_path,
+                        
+                        # 从 detections 中提取检测信息
+                        "num_detections": detections.get("num_detections", 0),
+                        "boxes": detections.get("boxes", []),
+                        "phrases": detections.get("phrases", []),
+                        "logits": detections.get("logits", []),
+                        "size": detections.get("size", action_result.get("result", {}).get("size", [])),
+                        
+                        # 额外信息
+                        "success": action_result.get("status") == "SUCCESS"
+                    }
+                    
+                    print(f"\n[DEBUG VisionQAEnv.step] Set pending Grounding DINO feedback:")
+                    print(f"  - num_detections: {self.pending_tool_feedback['num_detections']}")
+                    print(f"  - original_image_path: {self.pending_tool_feedback['original_image_path']}")
+                    print(f"  - image exists: {os.path.exists(image_path)}")
+                    print(f"  - requires_tool_response: {self.requires_tool_response}")
+                
+                # 对ChartMoE特殊处理
+                elif action_result.get("tool") == "chartmoe":
+                    self.pending_tool_feedback = {
+                        "tool": "chartmoe",
+                        "task_type": action_result.get("task_type", "unknown"),
+                        "output": action_result.get("output", {}),
+                        "original_question": self.current_question,
+                        "result": action_result.get("result", {})
+                    }
+                    print(f"\n[DEBUG VisionQAEnv.step] Set pending ChartMoE feedback:")
+                    print(f"  - task_type: {self.pending_tool_feedback['task_type']}")
+                    print(f"  - output: {self.pending_tool_feedback.get('output', 'N/A')}")
+                    print(f"  - requires_tool_response: {self.requires_tool_response}")
+                
+                # 对DiagramFormalizer特殊处理 - 修复：不要重新构建，保持原有的完整反馈
+                elif action_result.get("tool") == "diagram_formalizer":
+                    # ⭐ 关键修改：检查是否已经在 _execute_diagram_formalizer 中设置了反馈
+                    if hasattr(self, 'pending_tool_feedback') and self.pending_tool_feedback and self.pending_tool_feedback.get('tool') == 'diagram_formalizer':
+                        # 保持原有的完整反馈，它包含了solution等关键字段
+                        print(f"\n[DEBUG VisionQAEnv.step] Keeping complete DiagramFormalizer feedback from _execute_diagram_formalizer")
+                        print(f"  - Has solution: {'solution' in self.pending_tool_feedback}")
+                        print(f"  - Solution value: '{self.pending_tool_feedback.get('solution', 'N/A')}'")
+                        print(f"  - Task type: {self.pending_tool_feedback.get('task_type', 'N/A')}")
+                        print(f"  - Formalized output preview: {str(self.pending_tool_feedback.get('formalized_output', ''))[:100]}")
+                    else:
+                        # 如果没有预设的反馈，才构建新的（这种情况不应该发生）
+                        print(f"[WARNING] No preset DiagramFormalizer feedback, building from action_result")
+                        self.pending_tool_feedback = {
+                            "tool": "diagram_formalizer",
+                            "task_type": action_result.get("task_type", "unknown"),
+                            "solution": action_result.get("solution", ""),  # 确保包含solution
+                            "formalized_output": action_result.get("formalized_output", ""),
+                            "steps": action_result.get("steps", []),
+                            "original_question": self.current_question,
+                            "result": action_result.get("result", {})
+                        }
+                    print(f"  - requires_tool_response: {self.requires_tool_response}")
+                
+                # 对EasyOCR特殊处理
+                elif action_result.get("tool") == "easyocr":
+                    self.pending_tool_feedback = {
+                        "tool": "easyocr",
+                        "task": action_result.get("task", "unknown"),
+                        "num_detections": action_result.get("num_detections", 0),
+                        "all_texts": action_result.get("all_texts", []),
+                        "processed_output": action_result.get("processed_output", ""),
+                        "original_question": self.current_question,
+                        "result": action_result.get("result", {}),
+                        "success": action_result.get("success", False)
+                    }
+                    
+                    # 根据不同任务类型添加特定信息
+                    task = action_result.get("task", "")
+                    if task == "extract_math":
+                        self.pending_tool_feedback["math_elements"] = action_result.get("math_elements", {})
+                        self.pending_tool_feedback["combined_expressions"] = action_result.get("combined_expressions", [])
+                    elif task == "extract_table":
+                        self.pending_tool_feedback["table_data"] = action_result.get("table_data", [])
+                    
+                    print(f"\n[DEBUG VisionQAEnv.step] Set pending EasyOCR feedback:")
+                    print(f"  - task: {self.pending_tool_feedback['task']}")
+                    print(f"  - num_detections: {self.pending_tool_feedback['num_detections']}")
+                    print(f"  - all_texts: {self.pending_tool_feedback['all_texts'][:3]}...")  # 显示前3个
+                    print(f"  - requires_tool_response: {self.requires_tool_response}")
+                    
+                else:
+                    self.pending_tool_feedback = action_result.get("tool_feedback", action_result.get("result", {}))
+            
+            # 构建观察（现在会包含工具反馈）
+            observation = self._get_obs()
+            
+            # 构建信息
+            info = {
+                "step": self.current_step,
+                "action_result": action_result,
+                "validation": validation_info,
+                "message": message,
+                "truncated": truncated,
+                "chat_history": self.chat.get_history(),
+                "action_history": self.action_history
+            }
+            
+            # ⭐ 添加调试信息
+            print(f"\n[DEBUG VisionQAEnv] Before expanding validation_info:")
+            print(f"  - validation_info type: {type(validation_info)}")
+            print(f"  - validation_info keys: {list(validation_info.keys()) if isinstance(validation_info, dict) else 'Not a dict'}")
+            if isinstance(validation_info, dict):
+                print(f"  - validation_info content: {validation_info}")
+            
+            # ⭐ 关键修改：将validation_info中的重要字段展开到info顶层
+            if isinstance(validation_info, dict):
+                # 这些字段需要在顶层，以便评估脚本能正确获取
+                important_fields = [
+                    'prediction', 'ground_truth', 'correct', 'done_reason',
+                    'attempt', 'attempt_history', 'knowledge_points', 
+                    'final_answer', 'needs_reflection', 'current_attempt',
+                    'max_attempts', 'previous_answer', 'feedback', 'comment'
+                ]
+                
+                for field in important_fields:
+                    if field in validation_info:
+                        info[field] = validation_info[field]
+                        print(f"  - Added {field}: {validation_info[field]}")
+            
+            # ⭐ 额外确保：如果是反思场景，确保done_reason被正确设置
+            if not done and validation_info.get('needs_reflection', False):
+                info['done_reason'] = 'continuing'
+                print(f"[DEBUG VisionQAEnv] Setting done_reason='continuing' for reflection")
+            
+            print(f"\n[DEBUG VisionQAEnv] After expanding:")
+            print(f"  - info keys: {list(info.keys())}")
+            print(f"  - done: {done}")
+            print(f"  - truncated: {truncated}")
+            if 'prediction' in info:
+                print(f"  - prediction: '{info['prediction']}'")
+            if 'done_reason' in info:
+                print(f"  - done_reason: {info['done_reason']}")
+            
+            # 最终检查
+            if observation is None or info is None:
+                print(f"[ERROR] observation or info is None!")
+                print(f"  - observation: {observation}")
+                print(f"  - info: {info}")
+                print(f"  - reward: {reward}")
+                print(f"  - done: {done}")
+                print(f"  - truncated: {truncated}")
+            
+            return observation, reward, done, truncated, info
+            
+        except Exception as e:
+            # ⭐ 确保即使出错也返回5个值
+            print(f"[ERROR] Exception in step: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # 返回错误状态
+            error_obs = {"error": str(e)}
+            error_info = {"error": str(e), "step": self.current_step}
+            return error_obs, -0.1, True, True, error_info
+    
     
     def _parse_tool_call(self, action: str) -> Tuple[str, Any]:
-        """Parse tool call format"""
+        """解析工具调用格式"""
         import re
         
-        # Try to match <tool_call> format
+        # 尝试匹配<tool_call>格式
         tool_pattern = r'<tool_call>(.*?)</tool_call>'
         tool_match = re.search(tool_pattern, action, re.DOTALL)
         
@@ -495,7 +1112,7 @@ class VisionQAEnv:
     
     
     def _execute_action(self, action: str) -> Dict[str, Any]:
-        """Execute action - Supports DeepEyes tools, Grounding DINO, ChartMoE, standard action system, and direct answers"""
+        """执行动作 - 支持新DeepEyes工具、Grounding DINO、ChartMoE、EasyOCR、标准动作系统和直接答案"""
         if not action.strip():
             return {
                 "type": "error",
@@ -504,42 +1121,119 @@ class VisionQAEnv:
                 "error": "Empty action"
             }
         
-        # ===== Added debug output =====
+        # ===== 增强的调试输出 =====
         print(f"\n[DEBUG _execute_action] START")
         print(f"  - Action length: {len(action)}")
         print(f"  - Action preview (first 200 chars): {action[:200]}")
+        
+        # 检查action的结尾，看是否有异常截断
+        if len(action) > 50:
+            print(f"  - Action last 50 chars: '{action[-50:]}'")
+            
+            # 检查是否有异常的结尾模式
+            suspicious_patterns = [
+                'addCriterion', '自动生成', 'matchCondition', '!***', 
+                'BEGIN_OF', '...', '++', '\\', 'circ'
+            ]
+            for pattern in suspicious_patterns:
+                if pattern in action[-50:]:
+                    print(f"  ⚠️  WARNING: Found suspicious ending pattern: '{pattern}'")
+                    print(f"  ⚠️  This suggests the output was truncated!")
+        
+        # 分析action内容
+        print(f"\n[DEBUG] Action content analysis:")
+        lines = action.split('\n')
+        print(f"  - Number of lines: {len(lines)}")
+        print(f"  - First line: '{lines[0] if lines else 'N/A'}'")
+        print(f"  - Last line: '{lines[-1] if lines else 'N/A'}'")
+        
+        # 检查是否包含答案
+        answer_patterns = ['答案', 'answer', 'Answer', '最终答案', 'final answer']
+        has_answer = any(pattern in action.lower() for pattern in answer_patterns)
+        print(f"  - Contains answer keyword: {has_answer}")
+        
+        # 检查是否包含数学公式（可能导致问题）
+        math_patterns = ['\\[', '\\]', '\\(', '\\)', '^\circ', '\\angle']
+        has_math = any(pattern in action for pattern in math_patterns)
+        print(f"  - Contains LaTeX math: {has_math}")
+        
+        # 估算token数量（粗略估计）
+        estimated_tokens = len(action) // 4  # 粗略估计：平均每个token约4个字符
+        print(f"  - Estimated tokens: ~{estimated_tokens}")
+        
+        # 检查是否看起来像完整的推理
+        looks_complete = has_answer or action.strip().endswith(('。', '.', '!', '?', 'D', 'C', 'B', 'A'))
+        print(f"  - Looks complete: {looks_complete}")
+        
+        # 工具相关调试
+        print(f"\n[DEBUG] Tool status:")
         print(f"  - Contains <tool_call>: {'<tool_call>' in action}")
         print(f"  - Contains <answer>: {'<answer>' in action}")
-        print(f"  - Contains <think>: {'<think>' in action}")
         print(f"  - DeepEyes enabled: {self.enable_deepeyes_tools}")
-        print(f"  - DeepEyes initialized: {self.deepeyes_initialized}")
         print(f"  - Grounding DINO enabled: {self.enable_grounding_dino}")
         print(f"  - ChartMoE enabled: {self.enable_chartmoe}")
+        print(f"  - DiagramFormalizer enabled: {self.enable_diagram_formalizer}")
+        print(f"  - EasyOCR enabled: {self.enable_easyocr}")
+        print(f"  - Inter-GPS enabled: {self.enable_inter_gps}")
+        print(f"  - SAM2 enabled: {self.enable_sam2}")
+        print(f"  - MultiMath enabled: {self.enable_multimath_server}")
         
-        # First try to parse generic tool call format
+        # 如果action看起来被截断，记录更多信息
+        if not looks_complete and len(action) > 100:
+            print(f"\n[DEBUG] ⚠️  TRUNCATION DETECTED:")
+            print(f"  - Action does not look complete")
+            print(f"  - No answer found")
+            print(f"  - Ends with: '{action[-20:]}'")
+            
+            # 检查是否在某个特定位置重复截断
+            if hasattr(self, '_previous_actions'):
+                if self._previous_actions and len(self._previous_actions) > 0:
+                    prev_action = self._previous_actions[-1]
+                    if len(prev_action) == len(action):
+                        print(f"  - ⚠️  Same length as previous action ({len(action)} chars)")
+                        print(f"  - This suggests a hard limit!")
+            else:
+                self._previous_actions = []
+            
+            self._previous_actions.append(action)
+        
+        # 首先尝试解析通用工具调用格式
         tool_type, tool_content = self._parse_tool_call(action)
         
-        # ⭐ Added debug info
+        # ⭐ 添加调试信息
         print(f"\n[DEBUG] Tool parsing result:")
         print(f"  - tool_type: {tool_type}")
         print(f"  - tool_content: {tool_content}")
-       
+    
         if tool_type == "tool_call":
-            # Handle generic tool call
+            # 处理通用工具调用
             tool_name = tool_content.get("tool", "")
             if not tool_name:
                 tool_name = tool_content.get("name", "")
             
-            # ⭐ Added more debug info
+            # ⭐ 添加更多调试信息
             print(f"\n[DEBUG] Tool call processing:")
             print(f"  - tool_name: '{tool_name}'")
+            print(f"  - deepeyes_tool is None: {self.deepeyes_tool is None}")
             print(f"  - grounding_dino_tool is None: {self.grounding_dino_tool is None}")
-            print(f"  - grounding_dino_tool type: {type(self.grounding_dino_tool)}")
             print(f"  - chartmoe_tool is None: {self.chartmoe_tool is None}")
-            print(f"  - chartmoe_tool type: {type(self.chartmoe_tool)}")
+            print(f"  - diagram_formalizer_tool is None: {self.diagram_formalizer_tool is None}")
+            print(f"  - easyocr_tool is None: {self.easyocr_tool is None}")
+            print(f"  - inter_gps_tool is None: {self.inter_gps_tool is None}")
+            print(f"  - sam2_tool is None: {self.sam2_tool is None}")
             print(f"  - Available tools: {list(self.tool_manager.keys())}")
             
-            if tool_name == "grounding_dino" and self.grounding_dino_tool:
+            # 处理新DeepEyes工具调用
+            if tool_name == "deepeyes" and self.deepeyes_tool:
+                print(f"[DEBUG] Executing DeepEyes tool call")
+                return self._execute_deepeyes(tool_content)
+            
+            # 处理DeepEyes内部工具调用（image_zoom_in_tool等）
+            elif tool_name in ["image_zoom_in_tool", "image_rotate_tool"] and self.deepeyes_tool:
+                print(f"[DEBUG] Executing DeepEyes {tool_name}")
+                return self._execute_deepeyes(tool_content)
+            
+            elif tool_name == "grounding_dino" and self.grounding_dino_tool:
                 print(f"[DEBUG] Executing Grounding DINO tool call")
                 return self._execute_grounding_dino(tool_content)
             
@@ -547,18 +1241,36 @@ class VisionQAEnv:
                 print(f"[DEBUG] Executing ChartMoE tool call")
                 return self._execute_chartmoe(tool_content)
             
-            elif tool_name == "image_zoom_in_tool" and self.deepeyes_tool:
-                print(f"[DEBUG] Forwarding to DeepEyes through tool_call")
-                # Convert format and execute DeepEyes
-                return self._execute_deepeyes_action(action, "tool_call", tool_content)
+            elif tool_name == "sam2" and self.sam2_tool:
+                print(f"[DEBUG] Executing SAM2 tool call")
+                return self._execute_sam2(tool_content)
             
-            elif tool_name == "deepeyes" and self.deepeyes_tool:
-                print(f"[DEBUG] Forwarding to DeepEyes through tool_call")
-                # Convert format and execute DeepEyes
-                return self._execute_deepeyes_action(action, "tool_call", tool_content)
+            elif tool_name == "diagram_formalizer" and self.diagram_formalizer_tool:
+                print(f"[DEBUG] Executing DiagramFormalizer tool call")
+                return self._execute_diagram_formalizer(tool_content)
+            
+            elif tool_name == "intergps" and self.inter_gps_tool:
+                print(f"[DEBUG] Executing Inter-GPS tool call")
+                return self._execute_inter_gps(tool_content)
+            
+            #elif tool_name == "multimath" and self.multimath_tool:
+            #    print(f"[DEBUG] Executing MultiMath tool call")
+            #    return self._execute_multimath(tool_content)
+            
+            elif tool_name == "multimath_server" and self.multimath_server_tool:
+                print(f"[DEBUG] Executing MultiMath Server tool call")
+                return self._execute_multimath_server(tool_content)
+            
+            elif tool_name == "sympy_geometry" and self.sympy_geometry_tool:
+                print(f"[DEBUG] Executing SymPy Geometry tool call")
+                return self._execute_sympy_geometry(tool_content)
+            
+            elif tool_name == "easyocr" and self.easyocr_tool:
+                print(f"[DEBUG] Executing EasyOCR tool call")
+                return self._execute_easyocr(tool_content)
             
             else:
-                # ⭐ More detailed error info
+                # ⭐ 更详细的错误信息
                 print(f"\n[DEBUG] ❌ Tool execution failed:")
                 print(f"  - Requested tool: '{tool_name}'")
                 print(f"  - Available tools: {list(self.tool_manager.keys())}")
@@ -573,7 +1285,7 @@ class VisionQAEnv:
                 }
         
         elif tool_type == "invalid_tool_call":
-            # JSON parse error
+            # JSON解析错误
             return {
                 "type": "error",
                 "status": "FAILED",
@@ -582,99 +1294,17 @@ class VisionQAEnv:
                 "raw_json": tool_content.get('raw_json', '')
             }
         
-        # If not a generic tool call format, check if it's DeepEyes format
-        if self.enable_deepeyes_tools and self.deepeyes_initialized:
-            # Call parser
-            action_type, content = parse_deepeyes_action(action)
-            
-            # ===== Key debug output =====
-            print(f"\n[DEBUG] DeepEyes Parser Result:")
-            print(f"  - Parsed action_type: {action_type}")
-            print(f"  - Content type: {type(content)}")
-            
-            # ⭐ Added DeepEyes specific format detection
-            if "<tool_call>" in action and "image_zoom_in_tool" in action:
-                print(f"\n[DEBUG] DeepEyes tool call detected:")
-                print(f"  - deepeyes_tool is None: {self.deepeyes_tool is None}")
-                if self.deepeyes_tool is not None:
-                    print(f"  - deepeyes_tool type: {type(self.deepeyes_tool)}")
-                
-                # Extract tool call content
-                try:
-                    tool_start = action.find("<tool_call>") + 11
-                    tool_end = action.find("</tool_call>")
-                    if tool_start > 10 and tool_end > tool_start:
-                        tool_json = action[tool_start:tool_end]
-                        tool_data = json.loads(tool_json)
-                        print(f"  - Tool name: {tool_data.get('name')}")
-                        print(f"  - Arguments: {tool_data.get('arguments', {})}")
-                        
-                        if self.deepeyes_tool is not None:
-                            print(f"[DEBUG] Executing DeepEyes tool call")
-                            
-                            # Get arguments
-                            bbox = tool_data.get("arguments", {}).get("bbox", [])
-                            print(f"[DEBUG] Bbox coordinates: {bbox}")
-                            
-                            # Execute tool
-                            if self.deepeyes_version == "v2":
-                                print(f"[DEBUG] Calling visual_toolbox_v2...")
-                                result = self.deepeyes_tool(self.current_image, bbox)
-                            else:
-                                print(f"[DEBUG] Calling DeepEyesV1.execute()...")
-                                result = self.deepeyes_tool.execute(
-                                    tool_name=tool_data["name"],
-                                    image_path=self.current_image,
-                                    **tool_data.get("arguments", {})
-                                )
-                            
-                            print(f"[DEBUG] DeepEyes execution result type: {type(result)}")
-                            if isinstance(result, dict):
-                                print(f"[DEBUG] Result keys: {list(result.keys())}")
-                            
-                            # Return processed result
-                            return {
-                                "type": "tool_execution",
-                                "status": "SUCCESS",
-                                "tool": "deepeyes",
-                                "tool_name": tool_data.get("name"),
-                                "result": result,
-                                "requires_response": True,
-                                "source": "deepeyes_direct"
-                            }
-                except Exception as e:
-                    print(f"[DEBUG] Error processing DeepEyes tool call: {e}")
-                    import traceback
-                    traceback.print_exc()
-            
-            # Process parse result
-            if action_type in ["tool_call", "answer", "think"]:
-                print(f"[DEBUG] Processing DeepEyes {action_type}")
-                return self._execute_deepeyes_action(action, action_type, content)
-                
-            elif action_type == "error":
-                print(f"[DEBUG] DeepEyes parse error detected")
-                error_msg = content.get('error', 'Unknown error') if isinstance(content, dict) else str(content)
-                
-                return {
-                    "type": "error",
-                    "status": "FAILED",
-                    "content": f"DeepEyes action parse error: {error_msg}",
-                    "error": "DeepEyes parse error",
-                    "raw_json": content.get('raw_json', '') if isinstance(content, dict) else None
-                }
-        
-        # If not a tool format, check standard action system
+        # 如果不是工具格式，检查标准动作系统
         if self.enable_actions and self.action_set:
             print(f"[DEBUG] Checking standard action system")
             
-            # First try to validate if it's a valid action
+            # 首先尝试验证是否是有效的动作
             if self.action_set.validate_action(action):
                 print(f"[DEBUG] Valid standard action detected")
-                # Execute action
+                # 执行动作
                 result = self.action_set.execute_action(action)
                 
-                # Standardize result format
+                # 标准化结果格式
                 if result.get("status") == "SUCCESS":
                     return {
                         "type": result.get("type", "action_execution"),
@@ -692,13 +1322,13 @@ class VisionQAEnv:
                         "raw_action": action
                     }
             
-            # If not a valid action, check if it's a direct answer
+            # 如果不是有效动作，检查是否是直接答案
             elif self._is_direct_answer(action):
                 print(f"[DEBUG] Direct answer detected")
                 return self._process_direct_answer(action)
             
             else:
-                # Neither a valid action nor an answer format
+                # 既不是有效动作也不是答案格式
                 print(f"[DEBUG] Invalid action format")
                 return {
                     "type": "error",
@@ -709,15 +1339,178 @@ class VisionQAEnv:
                 }
         
         else:
-            # Action system not enabled, use original simple processing
+            # 没有启用动作系统，使用原有的简单处理
             print(f"[DEBUG] No action system enabled, processing as direct answer")
             return self._process_direct_answer(action)
     
     
-    def _execute_grounding_dino(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute Grounding DINO tool call"""
+    
+    
+    def _execute_deepeyes(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
+        """执行新DeepEyes工具调用"""
         
-        # ⭐ 1. Print at function start
+        print(f"\n[DEBUG _execute_deepeyes] START")
+        print(f"  - Tool content: {tool_content}")
+        print(f"  - Tool available: {self.deepeyes_tool is not None}")
+        
+        if not self.deepeyes_tool:
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": "DeepEyes tool not initialized",
+                "error": "Tool not initialized"
+            }
+        
+        # 构造完整的action字符串（DeepEyes期望的格式）
+        tool_name = tool_content.get("name", tool_content.get("tool", ""))
+        
+        # 如果是DeepEyes内部工具（image_zoom_in_tool等）
+        if tool_name in ["image_zoom_in_tool", "image_rotate_tool"]:
+            action_string = f"""<tool_call>
+{json.dumps(tool_content)}
+</tool_call>"""
+        else:
+            # 获取参数中的action
+            parameters = tool_content.get("parameters", {})
+            action_string = parameters.get("action", json.dumps(tool_content))
+        
+        print(f"  - Constructed action string: {action_string[:200]}...")
+        
+        try:
+            print(f"\n[DEBUG] Calling deepeyes_tool.execute()...")
+            
+            # 执行DeepEyes
+            result = self.deepeyes_tool.execute(action_string)
+            
+            print(f"\n[DEBUG] DeepEyes execution complete")
+            print(f"  - Result type: {type(result)}")
+            print(f"  - Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+            print(f"  - Success: {result.get('success', False) if isinstance(result, dict) else 'N/A'}")
+            
+            # 检查是否有错误
+            if "error" in result:
+                print(f"  - ERROR in result: {result['error']}")
+                return {
+                    "type": "error",
+                    "status": "FAILED",
+                    "content": result["error"],
+                    "error": result["error"],
+                    "error_type": result.get("error_type", "Unknown")
+                }
+            
+            # 成功情况
+            if result.get('success'):
+                # 检查是否是最终答案
+                if result.get('final_answer'):
+                    return {
+                        "type": "answer",
+                        "status": "SUCCESS",
+                        "content": result['final_answer'],
+                        "source": "deepeyes"
+                    }
+                
+                # 工具执行成功，需要反馈
+                tool_used = result.get('tool_used', tool_name)
+                content = f"DeepEyes {tool_used} executed successfully"
+                
+                return_dict = {
+                    "type": "tool_result",
+                    "status": "SUCCESS",
+                    "tool": "deepeyes",
+                    "tool_used": tool_used,
+                    "content": content,
+                    "result": result,
+                    "requires_tool_response": True,
+                    "processed_output": result.get("processed_output", "")
+                }
+                
+                # 如果有处理后的图像
+                if "image" in result:
+                    return_dict["image"] = result["image"]
+                    return_dict["new_size"] = result.get("new_size", [])
+                    
+                    # ⭐ 添加保存图片功能
+                    try:
+                        import os
+                        from PIL import Image
+                        
+                        save_dir = "/data/wang/meng/GYM-Work/vlm_gym-tool-usage-mathvista/vlm_gym/environments/tools/scienceqa_deepeyes/"
+                        os.makedirs(save_dir, exist_ok=True)
+                        
+                        # 获取任务ID
+                        task_id = getattr(self.task, 'task_id', 'unknown') if hasattr(self, 'task') else 'unknown'
+                        
+                        # 获取当前尝试次数
+                        attempt = 1
+                        if hasattr(self, 'task') and hasattr(self.task, 'current_attempt'):
+                            attempt = self.task.current_attempt + 1
+                        
+                        # 构建文件名
+                        filename = f"{task_id}_attempt{attempt}_deepeyes_{tool_used}.png"
+                        save_path = os.path.join(save_dir, filename)
+                        
+                        # 保存图像
+                        processed_image = result['image']
+                        if isinstance(processed_image, Image.Image):
+                            processed_image.save(save_path)
+                            print(f"  - Saved DeepEyes processed image to: {save_path}")
+                            
+                            # 保存bbox信息
+                            bbox_info_path = os.path.join(save_dir, f"{task_id}_attempt{attempt}_bbox_info.txt")
+                            with open(bbox_info_path, 'w') as f:
+                                f.write(f"Task ID: {task_id}\n")
+                                f.write(f"Attempt: {attempt}\n")
+                                f.write(f"Tool used: {tool_used}\n")
+                                f.write(f"Original bbox: {tool_content.get('arguments', {}).get('bbox_2d', 'unknown')}\n")
+                                f.write(f"Processed image size: {processed_image.size}\n")
+                                f.write(f"New size: {result.get('new_size', 'unknown')}\n")
+                                f.write(f"Success: True\n")
+                        else:
+                            print(f"  - WARNING: Image is not PIL Image object")
+                            
+                    except Exception as e:
+                        print(f"  - ERROR saving DeepEyes image: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                    # ⭐ 保存图片功能结束
+
+                print(f"\n[DEBUG] Returning tool_result:")
+                print(f"  - Type: {return_dict['type']}")
+                print(f"  - Status: {return_dict['status']}")
+                print(f"  - Tool used: {return_dict['tool_used']}")
+                print(f"  - requires_tool_response: {return_dict.get('requires_tool_response', False)}")
+                
+                return return_dict
+            
+            else:
+                # 执行失败
+                return {
+                    "type": "error",
+                    "status": "FAILED",
+                    "content": "DeepEyes execution failed",
+                    "error": "Execution failed",
+                    "result": result
+                }
+                
+        except Exception as e:
+            print(f"\n[DEBUG] DeepEyes execution FAILED with exception:")
+            print(f"  - Exception type: {type(e).__name__}")
+            print(f"  - Exception message: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            logger.error(f"DeepEyes execution failed: {e}")
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": f"DeepEyes execution error: {str(e)}",
+                "error": str(e)
+            }
+    
+    def _execute_grounding_dino(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
+        """执行Grounding DINO工具调用"""
+        
+        # ⭐ 1. 函数开始时打印
         print(f"\n[DEBUG _execute_grounding_dino] START")
         print(f"  - Tool content: {tool_content}")
         print(f"  - Tool available: {self.grounding_dino_tool is not None}")
@@ -730,29 +1523,29 @@ class VisionQAEnv:
                 "error": "Tool not initialized"
             }
         
-        # Get parameters
+        # 获取参数
         parameters = tool_content.get("parameters", {})
         
-        # ⭐ 2. Print parameter info
+        # ⭐ 2. 打印参数信息
         print(f"  - Parameters extracted: {parameters}")
         print(f"  - Caption: {parameters.get('caption', 'N/A')}")
         
         try:
-            # ⭐ 3. Print before execution
+            # ⭐ 3. 执行前打印
             print(f"\n[DEBUG] Calling grounding_dino_tool.execute()...")
             
-            # Execute detection
+            # 执行检测
             result = self.grounding_dino_tool.execute(parameters)
             
-            # ⭐ 4. Print result immediately after execution
+            # ⭐ 4. 执行后立即打印结果
             print(f"\n[DEBUG] Grounding DINO execution complete")
             print(f"  - Result type: {type(result)}")
             print(f"  - Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
             print(f"  - Num detections: {result.get('num_detections', 0) if isinstance(result, dict) else 'N/A'}")
             
-            # Check for errors
+            # 检查是否有错误
             if "error" in result:
-                # ⭐ 5. Print on error
+                # ⭐ 5. 错误情况打印
                 print(f"  - ERROR in result: {result['error']}")
                 return {
                     "type": "error",
@@ -761,41 +1554,62 @@ class VisionQAEnv:
                     "error": result["error"]
                 }
             
-            # ⭐ 6. Print detailed success info
+            # ⭐ 6. 成功情况详细打印
             print(f"\n[DEBUG] Processing successful detection result:")
-            print(f"  - Boxes: {result.get('boxes', [])[:3]}...")  # Only print first 3
+            print(f"  - Boxes: {result.get('boxes', [])[:3]}...")  # 只打印前3个
             print(f"  - Phrases: {result.get('phrases', [])}")
-            print(f"  - Logits: {result.get('logits', [])[:3]}...")  # Only print first 3
+            print(f"  - Logits: {result.get('logits', [])[:3]}...")  # 只打印前3个
             print(f"  - Image size: {result.get('size', 'N/A')}")
             
-            # Success return
+            # ⭐ 新增：获取图像路径
+            image_path = ""
+            if self.task and self.task.task_data:
+                image_path = str(self.task.task_data.get("image_path", ""))
+                # 如果是相对路径，转换为绝对路径
+                if image_path and not os.path.isabs(image_path):
+                    from pathlib import Path
+                    image_path = str(self.dataset_path / image_path)
+            
+            print(f"  - Image path: {image_path}")
+            print(f"  - Image exists: {os.path.exists(image_path) if image_path else False}")
+            
+            # 成功返回
             return_dict = {
                 "type": "tool_result",
                 "status": "SUCCESS",
                 "tool": "grounding_dino",
                 "content": f"Detected {result.get('num_detections', 0)} objects",
                 "result": result,
-                "requires_tool_response": True,  # ⭐ Added this flag
+                "requires_tool_response": True,  # ⭐ 添加这个标志
                 "detections": {
                     "boxes": result.get("boxes", []),
                     "phrases": result.get("phrases", []),
                     "logits": result.get("logits", []),
-                    "num_detections": result.get("num_detections", 0)
+                    "num_detections": result.get("num_detections", 0),
+                    "size": result.get("size", [])  # ⭐ 添加图像尺寸
                 },
-                "query": parameters.get("caption", "")  # Save query term
+                "query": parameters.get("caption", ""),  # 保存查询词
+                # ⭐ 新增：添加图像路径到返回结果
+                "image_path": image_path,
+                "image_info": {
+                    "path": image_path,
+                    "exists": os.path.exists(image_path) if image_path else False,
+                    "size": result.get("size", [])  # [H, W]
+                }
             }
             
-            # ⭐ 7. Print before returning
+            # ⭐ 7. 返回前打印
             print(f"\n[DEBUG] Returning tool_result:")
             print(f"  - Type: {return_dict['type']}")
             print(f"  - Status: {return_dict['status']}")
             print(f"  - requires_tool_response: {return_dict.get('requires_tool_response', False)}")
             print(f"  - Content: {return_dict['content']}")
+            print(f"  - Image path included: {bool(return_dict.get('image_path'))}")
             
             return return_dict
             
         except Exception as e:
-            # ⭐ 8. Print on exception
+            # ⭐ 8. 异常情况打印
             print(f"\n[DEBUG] Grounding DINO execution FAILED with exception:")
             print(f"  - Exception type: {type(e).__name__}")
             print(f"  - Exception message: {str(e)}")
@@ -810,8 +1624,135 @@ class VisionQAEnv:
                 "error": str(e)
             }
     
+    
+    def _execute_sam2(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
+        """执行SAM2工具调用"""
+        
+        print(f"\n[DEBUG _execute_sam2] START")
+        print(f"  - Tool content: {tool_content}")
+        print(f"  - Tool available: {self.sam2_tool is not None}")
+        
+        if not self.sam2_tool:
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": "SAM2 tool not initialized",
+                "error": "Tool not initialized"
+            }
+        
+        # 提取实际参数
+        if "parameters" in tool_content:
+            parameters = tool_content["parameters"]
+        else:
+            # 移除 "tool" 键，保留其他所有参数
+            parameters = {k: v for k, v in tool_content.items() if k != "tool"}
+        
+        print(f"  - Parameters extracted: {parameters}")
+        print(f"  - Task type: {parameters.get('task', 'N/A')}")
+        
+        try:
+            print(f"\n[DEBUG] Calling sam2_tool.execute()...")
+            
+            # 执行SAM2
+            result = self.sam2_tool.execute(parameters)
+            
+            print(f"\n[DEBUG] SAM2 execution complete")
+            print(f"  - Result type: {type(result)}")
+            print(f"  - Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+            print(f"  - Success: {result.get('success', False) if isinstance(result, dict) else 'N/A'}")
+            print(f"  - Task: {result.get('task', 'N/A') if isinstance(result, dict) else 'N/A'}")
+            
+            # 检查是否有错误
+            if "error" in result:
+                print(f"  - ERROR in result: {result['error']}")
+                return {
+                    "type": "error",
+                    "status": "FAILED",
+                    "content": result["error"],
+                    "error": result["error"],
+                    "error_type": result.get("error_type", "Unknown")
+                }
+            
+            # 成功情况
+            task = result.get("task", "unknown")
+            num_masks = result.get("num_masks", 0)
+            results = result.get("results", [])
+            
+            print(f"\n[DEBUG] Processing successful SAM2 result:")
+            print(f"  - Task: {task}")
+            print(f"  - Num masks: {num_masks}")
+            print(f"  - Results count: {len(results)}")
+            
+            # 构建返回内容
+            if task == "point_segment":
+                content = f"Segmented image using point prompts, generated {num_masks} masks"
+            elif task == "box_segment":
+                content = f"Segmented image using box prompt"
+            elif task == "multi_point_segment":
+                content = f"Segmented image using multiple points, generated {num_masks} masks"
+            elif task == "smart_medical_segment":
+                detected_organ = result.get("detected_organ", "unknown")
+                content = f"Smart medical segmentation for {detected_organ}, generated {num_masks} masks"
+            elif task == "mixed_segment":
+                content = f"Segmented image using mixed prompts (points + box)"
+            elif task == "grid_search_segment":
+                best_result = result.get("best_result", {})
+                content = f"Grid search segmentation found best result with {best_result.get('coverage', 0):.1f}% coverage"
+            elif task == "everything_segment":
+                num_objects = result.get("num_objects", 0)
+                content = f"Segmented {num_objects} objects in the image"
+            else:
+                content = f"SAM2 completed task: {task}"
+            
+            # 成功返回
+            return_dict = {
+                "type": "tool_result",
+                "status": "SUCCESS",
+                "tool": "sam2",
+                "content": content,
+                "result": result,
+                "requires_tool_response": True,
+                "task": task,
+                "num_masks": num_masks,
+                "results": results,
+                "success": result.get("success", True)
+            }
+            
+            # 根据不同任务类型添加特定信息
+            if task == "smart_medical_segment":
+                return_dict["detected_organ"] = result.get("detected_organ", "unknown")
+                return_dict["strategy"] = result.get("strategy", "")
+            elif task == "grid_search_segment":
+                return_dict["best_result"] = result.get("best_result", {})
+            
+            print(f"\n[DEBUG] Returning tool_result:")
+            print(f"  - Type: {return_dict['type']}")
+            print(f"  - Status: {return_dict['status']}")
+            print(f"  - Tool: {return_dict['tool']}")
+            print(f"  - requires_tool_response: {return_dict.get('requires_tool_response', False)}")
+            print(f"  - Content: {return_dict['content']}")
+            
+            return return_dict
+            
+        except Exception as e:
+            print(f"\n[DEBUG] SAM2 execution FAILED with exception:")
+            print(f"  - Exception type: {type(e).__name__}")
+            print(f"  - Exception message: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            logger.error(f"SAM2 execution failed: {e}")
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": f"SAM2 execution error: {str(e)}",
+                "error": str(e)
+            }
+    
+    
+    
     def _execute_chartmoe(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute ChartMoE tool call"""
+        """执行ChartMoE工具调用"""
         
         print(f"\n[DEBUG _execute_chartmoe] START")
         print(f"  - Tool content: {tool_content}")
@@ -825,15 +1766,15 @@ class VisionQAEnv:
                 "error": "Tool not initialized"
             }
         
-        # ⭐ Modified: Correctly handle parameter format
-        # ChartMoE expects parameters in format {"task": "xxx"} or {"prompt": "xxx"}
-        # But tool_content may contain {"tool": "chartmoe", "parameters": {...}}
+        # ⭐ 修改：正确处理参数格式
+        # ChartMoE期望的参数格式是 {"task": "xxx"} 或 {"prompt": "xxx"}
+        # 但 tool_content 可能包含 {"tool": "chartmoe", "parameters": {...}}
         
-        # Extract actual parameters
+        # 提取实际参数
         if "parameters" in tool_content:
             parameters = tool_content["parameters"]
         else:
-            # Remove "tool" key, keep all other parameters
+            # 移除 "tool" 键，保留其他所有参数
             parameters = {k: v for k, v in tool_content.items() if k != "tool"}
         
         print(f"  - Parameters extracted: {parameters}")
@@ -843,7 +1784,7 @@ class VisionQAEnv:
         try:
             print(f"\n[DEBUG] Calling chartmoe_tool.execute()...")
             
-            # Execute ChartMoE
+            # 执行ChartMoE
             result = self.chartmoe_tool.execute(parameters)
             
             print(f"\n[DEBUG] ChartMoE execution complete")
@@ -852,7 +1793,7 @@ class VisionQAEnv:
             print(f"  - Success: {result.get('success', False) if isinstance(result, dict) else 'N/A'}")
             print(f"  - Task type: {result.get('task_type', 'N/A') if isinstance(result, dict) else 'N/A'}")
             
-            # Check for errors
+            # 检查是否有错误
             if not result.get('success', True) or "error" in result:
                 print(f"  - ERROR in result: {result.get('error', 'Unknown error')}")
                 return {
@@ -863,7 +1804,7 @@ class VisionQAEnv:
                     "error_type": result.get("error_type", "Unknown")
                 }
             
-            # Success case
+            # 成功情况
             processed_output = result.get("processed_output", "")
             task_type = result.get("task_type", "unknown")
             
@@ -872,9 +1813,9 @@ class VisionQAEnv:
             print(f"  - Output length: {len(str(processed_output))}")
             print(f"  - Output preview: {str(processed_output)[:200]}...")
             
-            # Build return content
+            # 构建返回内容
             if task_type == "to_table":
-                # Estimate number of table rows
+                # 计算表格行数（简单估算）
                 lines = processed_output.strip().split('\n') if processed_output else []
                 table_rows = len([l for l in lines if '|' in l and not l.strip().startswith('|--')])
                 content = f"Extracted table with {table_rows} data rows"
@@ -893,7 +1834,7 @@ class VisionQAEnv:
             else:
                 content = f"ChartMoE processed query: {parameters.get('prompt', task_type)[:50]}..."
             
-            # Success return
+            # 成功返回
             return_dict = {
                 "type": "tool_result",
                 "status": "SUCCESS",
@@ -902,7 +1843,7 @@ class VisionQAEnv:
                 "result": result,
                 "requires_tool_response": True,
                 "task_type": task_type,
-                "output": processed_output,  # Use string output directly
+                "output": processed_output,  # 直接使用字符串输出
                 "raw_output": processed_output,
                 "prompt_used": parameters.get("prompt", "")
             }
@@ -929,175 +1870,833 @@ class VisionQAEnv:
                 "content": f"ChartMoE execution error: {str(e)}",
                 "error": str(e)
             }
+    
+    def _execute_diagram_formalizer(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
+        """执行 DiagramFormalizer 工具调用"""
         
-    def _execute_deepeyes_action(self, action: str, action_type: str, content: Any) -> Dict[str, Any]:
-        """Execute a DeepEyes-format action"""
+        print(f"\n[DEBUG _execute_diagram_formalizer] START")
+        print(f"  - Tool content: {tool_content}")
+        print(f"  - Tool available: {self.diagram_formalizer_tool is not None}")
         
-        # ===== Debug output start =====
-        print(f"\n{'='*60}")
-        print(f"[DEBUG VisionQAEnv._execute_deepeyes_action] START")
-        print(f"  - Action type: {action_type}")
-        print(f"  - Content type: {type(content)}")
-        print(f"  - Content: {content}")
-        print(f"  - DeepEyes tool available: {self.deepeyes_tool is not None}")
-        print(f"  - DeepEyes tool class: {self.deepeyes_tool.__class__.__name__ if self.deepeyes_tool else 'None'}")
-        print(f"  - DeepEyes interaction count: {self.deepeyes_interaction_count}")
-        print(f"  - Raw action (first 500 chars):")
-        print(f"    {action[:500]}")
-        print(f"{'='*60}")
+        if not self.diagram_formalizer_tool:
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": "DiagramFormalizer tool not initialized",
+                "error": "Tool not initialized"
+            }
         
-        self.deepeyes_interaction_count += 1
+        # 提取实际参数
+        if "parameters" in tool_content:
+            parameters = tool_content["parameters"]
+        else:
+            # 移除 "tool" 键，保留其他所有参数
+            parameters = {k: v for k, v in tool_content.items() if k != "tool"}
         
-        if action_type == "tool_call":
-            # Execute DeepEyes tool call
-            try:
-                # ⭐ New: Initialize tool before calling execute
-                if hasattr(self.deepeyes_tool, 'reset') and self.current_image:
-                    try:
-                        print(f"[DEBUG] Initializing DeepEyes tool with current image")
-                        # Prepare data
-                        raw_prompt = ""  # Can be empty
-                        multi_modal_data = {"image": [self.current_image]}
-                        
-                        # Call reset to initialize
-                        self.deepeyes_tool.reset(
-                            raw_prompt=raw_prompt,
-                            multi_modal_data=multi_modal_data,
-                            origin_multi_modal_data=multi_modal_data
-                        )
-                        print(f"[DEBUG] DeepEyes tool initialized successfully")
-                    except Exception as e:
-                        print(f"[DEBUG] Failed to initialize DeepEyes tool: {e}")
-                        import traceback
-                        traceback.print_exc()
-                
-                print(f"\n[DEBUG] Calling DeepEyes tool.execute()...")
-                print(f"[DEBUG] Tool instance: {self.deepeyes_tool}")
-                
-                obs, reward, done, info = self.deepeyes_tool.execute(action)
-                
-                print(f"\n[DEBUG] DeepEyes execution result:")
-                print(f"  - Done: {done}")
-                print(f"  - Reward: {reward}")
-                print(f"  - Info: {info}")
-                print(f"  - Observation type: {type(obs)}")
-                if isinstance(obs, dict):
-                    print(f"  - Observation keys: {list(obs.keys())}")
-                    if "multi_modal_data" in obs:
-                        mmd = obs["multi_modal_data"]
-                        print(f"  - Multi-modal data keys: {list(mmd.keys()) if isinstance(mmd, dict) else 'N/A'}")
-                        if isinstance(mmd, dict) and "image" in mmd:
-                            print(f"  - Number of processed images: {len(mmd['image']) if isinstance(mmd['image'], list) else 1}")
-                
-                if done:
-                    print(f"\n[DEBUG] DeepEyes indicates done=True")
-                    # DeepEyes found an answer (action contains <answer> tag)
-                    import re
-                    answer_match = re.search(r'<answer>(.*?)</answer>', action, re.DOTALL)
-                    if answer_match:
-                        answer = answer_match.group(1).strip()
-                        print(f"[DEBUG] Found answer in action: {answer}")
-                        return {
-                            "type": "answer",
-                            "status": "SUCCESS",
-                            "content": answer,
-                            "source": "deepeyes",
-                            "tool_info": info
-                        }
-                    else:
-                        print(f"[DEBUG] No answer tag found, returning deepeyes_done")
-                        return {
-                            "type": "deepeyes_done",
-                            "status": "SUCCESS",
-                            "content": "DeepEyes execution completed",
-                            "tool_info": info
-                        }
-                else:
-                    print(f"\n[DEBUG] DeepEyes needs more interaction (done=False)")
-                    # Need to continue interaction, return tool observation
-                    tool_feedback = {
-                        "observation": obs,
-                        "reward": reward,
-                        "info": info
-                    }
-                    
-                    # If obs contains processed images
-                    processed_images = []
-                    if isinstance(obs, dict) and "multi_modal_data" in obs:
-                        if "image" in obs["multi_modal_data"]:
-                            processed_images = obs["multi_modal_data"]["image"]
-                            print(f"[DEBUG] Found {len(processed_images)} processed images")
-                    
-                    result = {
-                        "type": "deepeyes_feedback",
-                        "status": "SUCCESS",
-                        "content": "Tool executed, awaiting response",
-                        "deepeyes_feedback": True,
-                        "tool_feedback": tool_feedback,
-                        "processed_images": processed_images,
-                        "intermediate_reward": reward
-                    }
-                    
-                    print(f"[DEBUG] Returning deepeyes_feedback result")
-                    return result
-                    
-            except Exception as e:
-                print(f"\n[DEBUG] DeepEyes execution failed with error: {e}")
-                import traceback
-                traceback.print_exc()
-                
-                logger.error(f"DeepEyes execution failed: {e}")
+        print(f"  - Parameters extracted: {parameters}")
+        print(f"  - Task type: {parameters.get('task', 'N/A')}")
+        print(f"  - Problem: {parameters.get('problem', 'N/A')[:100] if parameters.get('problem') else 'N/A'}...")
+        
+        try:
+            print(f"\n[DEBUG] Calling diagram_formalizer_tool.execute()...")
+            
+            # 执行 DiagramFormalizer
+            result = self.diagram_formalizer_tool.execute(parameters)
+            
+            print(f"\n[DEBUG] DiagramFormalizer execution complete")
+            print(f"  - Result type: {type(result)}")
+            print(f"  - Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+            print(f"  - Success: {result.get('success', False) if isinstance(result, dict) else 'N/A'}")
+            print(f"  - Task type: {result.get('task_type', 'N/A') if isinstance(result, dict) else 'N/A'}")
+            
+            # 检查是否有错误
+            if not result.get('success', True):
+                print(f"  - ERROR in result: {result.get('error', 'Unknown error')}")
                 return {
                     "type": "error",
                     "status": "FAILED",
-                    "content": f"DeepEyes execution error: {str(e)}",
-                    "error": str(e)
+                    "content": result.get("error", "DiagramFormalizer execution failed"),
+                    "error": result.get("error", "Unknown error"),
+                    "error_type": result.get("error_type", "Unknown")
                 }
-        
-        elif action_type == "answer":
-            print(f"\n[DEBUG] Processing final answer: {content}")
-            # DeepEyes-format final answer
-            return {
-                "type": "answer",
+            
+            # ===== 关键修改：提取和确保 solution 存在 =====
+            # 使用 _extract_solution_from_result 方法提取 solution
+            solution = self._extract_solution_from_result(result)
+            result["solution"] = solution  # 确保 solution 在 result 中
+            
+            print(f"\n[DEBUG] Solution extraction:")
+            print(f"  - Original solution in result: '{result.get('solution', 'NOT FOUND')}'")
+            print(f"  - Extracted solution: '{solution}'")
+            print(f"  - Final answer in result: '{result.get('final_answer', 'NOT FOUND')}'")
+            
+            # 如果 solution 还是空的，尝试从 final_answer 提取
+            if not solution and "final_answer" in result:
+                solution = str(result["final_answer"])
+                result["solution"] = solution
+                print(f"  - Extracted solution from final_answer: '{solution}'")
+            
+            # 成功情况
+            task_type = result.get("task_type", "unknown")
+            formalized_output = result.get("formalized_output", "")
+            
+            print(f"\n[DEBUG] Processing successful DiagramFormalizer result:")
+            print(f"  - Task type: {task_type}")
+            print(f"  - Solution: '{solution}' (empty: {not solution})")
+            print(f"  - Output length: {len(str(formalized_output))}")
+            print(f"  - Output preview: {str(formalized_output)[:200]}...")
+            
+            # 构建工具反馈
+            tool_feedback = {
+                "tool": "diagram_formalizer",
+                "task_type": task_type,
+                "formalized_output": formalized_output,
+                "solution": solution,  # 关键：确保包含 solution
+                "steps": result.get("steps", []),
+                "raw_response": result.get("raw_response", ""),
+                "analysis": result.get("analysis", {})
+            }
+            
+            # ===== 关键：设置 pending_tool_feedback 并立即验证 =====
+            self.pending_tool_feedback = tool_feedback
+            
+            print(f"\n[DEBUG] Setting pending_tool_feedback:")
+            print(f"  - pending_tool_feedback keys: {list(self.pending_tool_feedback.keys())}")
+            print(f"  - pending_tool_feedback solution: '{self.pending_tool_feedback.get('solution', 'EMPTY')}'")
+            print(f"  - Full pending_tool_feedback: {self.pending_tool_feedback}")
+            
+            # 构建返回内容的消息
+            if task_type == "formalize":
+                content = f"Formalized geometric problem into mathematical notation"
+            elif task_type == "solve":
+                content = f"Solved geometric problem step by step"
+                if solution:
+                    content += f" (solution: {solution})"
+            elif task_type == "analyze":
+                content = f"Analyzed geometric relationships"
+            elif task_type == "extract_constraints":
+                constraints = result.get("constraints", [])
+                content = f"Extracted {len(constraints)} geometric constraints"
+            elif task_type == "prove":
+                proof_steps = result.get("proof_steps", [])
+                content = f"Generated formal proof with {len(proof_steps)} steps"
+            else:
+                content = f"DiagramFormalizer processed query: {task_type}"
+            
+            # 成功返回
+            return_dict = {
+                "type": "tool_result",
                 "status": "SUCCESS",
-                "content": content,
-                "source": "deepeyes_direct"
+                "tool": "diagram_formalizer",  # ⭐ 添加这个字段，让step方法知道这是diagram_formalizer的结果
+                "message": f"DiagramFormalizer {'found solution: ' + solution if solution else 'completed analysis'}",
+                "requires_tool_response": True,
+                "content": content
+            }
+            
+            print(f"\n[DEBUG] Returning tool_result:")
+            print(f"  - Type: {return_dict['type']}")
+            print(f"  - Status: {return_dict['status']}")
+            print(f"  - Tool: {return_dict.get('tool', 'N/A')}")  # ⭐ 打印tool字段
+            print(f"  - Message: {return_dict['message']}")
+            print(f"  - requires_tool_response: {return_dict.get('requires_tool_response', False)}")
+            print(f"  - Content: {return_dict['content']}")
+            
+            return return_dict
+            
+        except Exception as e:
+            print(f"\n[DEBUG] DiagramFormalizer execution FAILED with exception:")
+            print(f"  - Exception type: {type(e).__name__}")
+            print(f"  - Exception message: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            logger.error(f"DiagramFormalizer execution failed: {e}")
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": f"DiagramFormalizer execution error: {str(e)}",
+                "error": str(e)
+            }
+
+    
+    
+    def _execute_inter_gps(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
+        """执行 Inter-GPS 工具调用"""
+        
+        print(f"\n[DEBUG _execute_inter_gps] START")
+        print(f"  - Tool content: {tool_content}")
+        print(f"  - Tool available: {self.inter_gps_tool is not None}")
+        
+        if not self.inter_gps_tool:
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": "Inter-GPS tool not initialized",
+                "error": "Tool not initialized"
             }
         
-        elif action_type == "think":
-            print(f"\n[DEBUG] Processing thinking: {content[:100]}...")
-            # Thinking only, no action execution
-            return {
-                "type": "thinking",
-                "status": "SUCCESS",
-                "content": content,
-                "source": "deepeyes"
-            }
-        
+        # 提取参数
+        if "parameters" in tool_content:
+            parameters = tool_content["parameters"]
         else:
-            print(f"\n[DEBUG] Unknown action type, processing as direct answer")
-            # Text format, treat as normal response
-            return self._process_direct_answer(action)
+            parameters = {k: v for k, v in tool_content.items() if k != "tool"}
+        
+        # 如果任务有逻辑形式，传递给工具
+        if self.task and hasattr(self.task, 'task_data'):
+            task_data = self.task.task_data
+            metadata = task_data.get('metadata', {})
+            
+            # 如果参数中没有逻辑形式，从任务数据中获取
+            if 'text_logic' not in parameters and 'text_logic_form' in metadata:
+                parameters['text_logic'] = metadata['text_logic_form']
+            if 'diagram_logic' not in parameters and 'diagram_logic_form' in metadata:
+                parameters['diagram_logic'] = metadata['diagram_logic_form']
+        
+        try:
+            print(f"\n[DEBUG] Calling inter_gps_tool.execute()...")
+            
+            # 执行 Inter-GPS
+            result = self.inter_gps_tool.execute(parameters)
+            
+            print(f"\n[DEBUG] Inter-GPS execution complete")
+            print(f"  - Result type: {type(result)}")
+            print(f"  - Success: {result.get('success', False)}")
+            print(f"  - Solution: {result.get('solution', 'N/A')}")
+            
+            # 检查是否有错误
+            if not result.get('success', False):
+                return {
+                    "type": "error",
+                    "status": "FAILED",
+                    "content": result.get("error", "Inter-GPS execution failed"),
+                    "error": result.get("error", "Unknown error")
+                }
+            
+            # 成功返回
+            return {
+                "type": "tool_result",
+                "status": "SUCCESS",
+                "tool": "inter_gps",
+                "content": f"Inter-GPS solved the problem: {result.get('solution', '')}",
+                "result": result,
+                "requires_tool_response": True,
+                "solution": result.get("solution", ""),
+                "method": result.get("method", "Inter-GPS")
+            }
+            
+        except Exception as e:
+            print(f"\n[DEBUG] Inter-GPS execution FAILED with exception:")
+            print(f"  - Exception: {str(e)}")
+            
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": f"Inter-GPS execution error: {str(e)}",
+                "error": str(e)
+            }
+    
+    def _execute_sympy_geometry(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
+        """执行SymPy几何工具调用"""
+        
+        print(f"\n[DEBUG _execute_sympy_geometry] START")
+        print(f"  - Tool content: {tool_content}")
+        print(f"  - Tool available: {self.sympy_geometry_tool is not None}")
+        
+        if not self.sympy_geometry_tool:
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": "SymPy Geometry tool not initialized",
+                "error": "Tool not initialized"
+            }
+        
+        # 提取实际参数
+        if "parameters" in tool_content:
+            parameters = tool_content["parameters"]
+        else:
+            # 移除 "tool" 键，保留其他所有参数
+            parameters = {k: v for k, v in tool_content.items() if k != "tool"}
+        
+        print(f"  - Parameters extracted: {parameters}")
+        print(f"  - Function: {parameters.get('function', 'N/A')}")
+        print(f"  - Args: {parameters.get('args', {})}")
+        
+        try:
+            print(f"\n[DEBUG] Calling sympy_geometry_tool.execute()...")
+            
+            # 执行SymPy几何计算
+            result = self.sympy_geometry_tool.execute(parameters)
+            
+            print(f"\n[DEBUG] SymPy Geometry execution complete")
+            print(f"  - Result type: {type(result)}")
+            print(f"  - Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+            print(f"  - Success: {result.get('success', False) if isinstance(result, dict) else 'N/A'}")
+            print(f"  - Function: {result.get('function', 'N/A') if isinstance(result, dict) else 'N/A'}")
+            
+            # 检查是否有错误
+            if "error" in result:
+                print(f"  - ERROR in result: {result['error']}")
+                return {
+                    "type": "error",
+                    "status": "FAILED",
+                    "content": result["error"],
+                    "error": result["error"],
+                    "available_functions": result.get("available_functions", [])
+                }
+            
+            # 成功情况
+            function = result.get("function", "unknown")
+            calc_result = result.get("result", {})
+            formatted = result.get("formatted", "")
+            
+            print(f"\n[DEBUG] Processing successful SymPy Geometry result:")
+            print(f"  - Function: {function}")
+            print(f"  - Result: {calc_result}")
+            print(f"  - Formatted: {formatted}")
+            
+            # 构建返回内容
+            content = formatted if formatted else f"SymPy Geometry calculated: {function}"
+            
+            # 成功返回
+            return_dict = {
+                "type": "tool_result",
+                "status": "SUCCESS",
+                "tool": "sympy_geometry",
+                "content": content,
+                "result": result,
+                "requires_tool_response": True,
+                "function": function,
+                "calculation_result": calc_result,
+                "formatted_output": formatted,
+                "success": result.get("success", True)
+            }
+            
+            print(f"\n[DEBUG] Returning tool_result:")
+            print(f"  - Type: {return_dict['type']}")
+            print(f"  - Status: {return_dict['status']}")
+            print(f"  - Tool: {return_dict['tool']}")
+            print(f"  - requires_tool_response: {return_dict.get('requires_tool_response', False)}")
+            print(f"  - Content: {return_dict['content']}")
+            
+            return return_dict
+            
+        except Exception as e:
+            print(f"\n[DEBUG] SymPy Geometry execution FAILED with exception:")
+            print(f"  - Exception type: {type(e).__name__}")
+            print(f"  - Exception message: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            logger.error(f"SymPy Geometry execution failed: {e}")
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": f"SymPy Geometry execution error: {str(e)}",
+                "error": str(e)
+            }
+    
+    
+    
+    def _execute_multimath_server(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
+        """执行 MultiMath Server 工具调用"""
+        
+        print(f"\n[DEBUG _execute_multimath_server] START")
+        print(f"  - Tool content: {tool_content}")
+        print(f"  - Tool available: {self.multimath_server_tool is not None}")
+        
+        if not self.multimath_server_tool:
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": "MultiMath Server tool not initialized",
+                "error": "Tool not initialized"
+            }
+        
+        # 提取实际参数（重要！）
+        if "parameters" in tool_content:
+            parameters = tool_content["parameters"]
+        else:
+            # 移除 "tool" 键，保留其他所有参数
+            parameters = {k: v for k, v in tool_content.items() if k != "tool"}
+        
+        print(f"  - Parameters extracted: {parameters}")
+        print(f"  - Task: {parameters.get('task', 'N/A')}")
+        print(f"  - Question: {parameters.get('question', 'N/A')[:100] if parameters.get('question') else 'N/A'}...")
+        print(f"  - Problem type: {parameters.get('problem_type', 'N/A')}")
+        print(f"  - Output format: {parameters.get('output_format', 'N/A')}")
+        
+        # 如果没有提供图像参数，但环境有当前图像，添加图像路径
+        if 'image' not in parameters and self.current_image:
+            # 获取图像路径
+            if self.task and self.task.task_data:
+                image_path = str(self.task.task_data.get("image_path", ""))
+                if image_path and not os.path.isabs(image_path):
+                    image_path = str(self.dataset_path / image_path)
+                if os.path.exists(image_path):
+                    parameters['image'] = image_path
+                    print(f"  - Added image path: {image_path}")
+        
+        try:
+            print(f"\n[DEBUG] Calling multimath_server_tool.execute()...")
+            
+            # 执行 MultiMath Server（关键：传递 parameters 而不是 tool_content）
+            result = self.multimath_server_tool.execute(parameters)
+            
+            print(f"\n[DEBUG] MultiMath Server execution complete")
+            print(f"  - Result type: {type(result)}")
+            print(f"  - Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+            print(f"  - Success: {result.get('success', False) if isinstance(result, dict) else 'N/A'}")
+            
+            # 检查是否有错误
+            if not result.get('success', False) or "error" in result:
+                print(f"  - ERROR in result: {result.get('error', 'Unknown error')}")
+                return {
+                    "type": "error",
+                    "status": "FAILED",
+                    "content": result.get("error", "MultiMath Server execution failed"),
+                    "error": result.get("error", "Unknown error"),
+                    "error_type": result.get("error_type", "Unknown")
+                }
+            
+            # 成功情况
+            task = parameters.get("task", "solve")
+            answer = result.get("answer", "")
+            method = result.get("method", "MultiMath-7B")
+            
+            print(f"\n[DEBUG] Processing successful MultiMath result:")
+            print(f"  - Task: {task}")
+            print(f"  - Answer: {answer}")
+            print(f"  - Method: {method}")
+            print(f"  - Has steps: {'steps' in result}")
+            
+            # 构建返回内容
+            if task == "solve":
+                content = f"MultiMath solved the problem: {answer}" if answer else "MultiMath completed solving"
+            elif task == "analyze":
+                content = "MultiMath analyzed the problem structure"
+            elif task == "explain":
+                content = "MultiMath generated detailed explanation"
+            else:
+                content = f"MultiMath completed task: {task}"
+            
+            # 成功返回
+            return_dict = {
+                "type": "tool_result",
+                "status": "SUCCESS",
+                "tool": "multimath_server",
+                "content": content,
+                "result": result,
+                "requires_tool_response": True,
+                "answer": answer,
+                "method": method,
+                "problem_type": result.get("problem_type", parameters.get("problem_type", "general")),
+                "has_image": result.get("has_image", False),
+                "success": result.get("success", True)
+            }
+            
+            # 根据不同任务类型添加特定信息
+            if task == "solve" and "steps" in result:
+                return_dict["steps"] = result["steps"]
+            elif task == "analyze" and "analysis" in result:
+                return_dict["analysis"] = result["analysis"]
+            elif task == "explain" and "explanation" in result:
+                return_dict["explanation"] = result["explanation"]
+            
+            print(f"\n[DEBUG] Returning tool_result:")
+            print(f"  - Type: {return_dict['type']}")
+            print(f"  - Status: {return_dict['status']}")
+            print(f"  - Tool: {return_dict['tool']}")
+            print(f"  - requires_tool_response: {return_dict.get('requires_tool_response', False)}")
+            print(f"  - Content: {return_dict['content']}")
+            
+            return return_dict
+            
+        except Exception as e:
+            print(f"\n[DEBUG] MultiMath Server execution FAILED with exception:")
+            print(f"  - Exception type: {type(e).__name__}")
+            print(f"  - Exception message: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            logger.error(f"MultiMath Server execution failed: {e}")
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": f"MultiMath Server execution error: {str(e)}",
+                "error": str(e)
+            }
+    
+    
+    
+    #def _execute_multimath(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
+    #    """执行 MultiMath 工具调用"""
+        
+    #    print(f"\n[DEBUG _execute_multimath] START")
+    #    print(f"  - Tool content: {tool_content}")
+    #    print(f"  - Tool available: {self.multimath_tool is not None}")
+        
+    #    if not self.multimath_tool:
+    #        return {
+    #            "type": "error",
+    #            "status": "FAILED",
+    #            "content": "MultiMath tool not initialized",
+    #            "error": "Tool not initialized"
+    #        }
+        
+        # 提取实际参数
+    #    if "parameters" in tool_content:
+    #        parameters = tool_content["parameters"]
+    #    else:
+            # 移除 "tool" 键，保留其他所有参数
+    #        parameters = {k: v for k, v in tool_content.items() if k != "tool"}
+        
+    #    print(f"  - Parameters extracted: {parameters}")
+    #    print(f"  - Task: {parameters.get('task', 'N/A')}")
+    #    print(f"  - Question: {parameters.get('question', 'N/A')[:100] if parameters.get('question') else 'N/A'}...")
+    #    print(f"  - Problem type: {parameters.get('problem_type', 'N/A')}")
+    #    print(f"  - Output format: {parameters.get('output_format', 'N/A')}")
+        
+        # 如果没有提供图像参数，但环境有当前图像，添加图像路径
+    #    if 'image' not in parameters and self.current_image:
+            # 获取图像路径
+    #        if self.task and self.task.task_data:
+    #            image_path = str(self.task.task_data.get("image_path", ""))
+    #            if image_path and not os.path.isabs(image_path):
+    #                image_path = str(self.dataset_path / image_path)
+    #            if os.path.exists(image_path):
+    #                parameters['image'] = image_path
+    #                print(f"  - Added image path: {image_path}")
+        
+    #    try:
+    #        print(f"\n[DEBUG] Calling multimath_tool.execute()...")
+            
+            # 执行 MultiMath
+    #        result = self.multimath_tool.execute(parameters)
+            
+    #        print(f"\n[DEBUG] MultiMath execution complete")
+    #        print(f"  - Result type: {type(result)}")
+    #        print(f"  - Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+    #        print(f"  - Success: {result.get('success', False) if isinstance(result, dict) else 'N/A'}")
+            
+            # 检查是否有错误
+    #        if "error" in result:
+    #            print(f"  - ERROR in result: {result['error']}")
+    #            return {
+    #                "type": "error",
+    #                "status": "FAILED",
+    #                "content": result["error"],
+    #                "error": result["error"],
+    #                "error_type": result.get("error_type", "Unknown")
+    #            }
+            
+            # 成功情况
+    #        task = parameters.get("task", "solve")
+    #        answer = result.get("answer", "")
+    #        method = result.get("method", "MultiMath-7B")
+            
+    #        print(f"\n[DEBUG] Processing successful MultiMath result:")
+    #        print(f"  - Task: {task}")
+    #        print(f"  - Answer: {answer}")
+    #        print(f"  - Method: {method}")
+    #        print(f"  - Has steps: {'steps' in result}")
+            
+            # 构建返回内容
+    #        if task == "solve":
+    #            content = f"MultiMath solved the problem: {answer}" if answer else "MultiMath completed solving"
+    #        elif task == "analyze":
+    #            content = "MultiMath analyzed the problem structure"
+    #        elif task == "explain":
+    #            content = "MultiMath generated detailed explanation"
+    #        else:
+    #            content = f"MultiMath completed task: {task}"
+            
+            # 成功返回
+    #        return_dict = {
+    #            "type": "tool_result",
+    #            "status": "SUCCESS",
+    #            "tool": "multimath",
+    #            "content": content,
+    #            "result": result,
+    #            "requires_tool_response": True,
+    #            "answer": answer,
+    #            "method": method,
+    #            "problem_type": result.get("problem_type", parameters.get("problem_type", "general")),
+    #            "has_image": result.get("has_image", False),
+    #            "success": result.get("success", True)
+    #        }
+            
+            # 根据不同任务类型添加特定信息
+    #        if task == "solve" and "steps" in result:
+    #            return_dict["steps"] = result["steps"]
+    #        elif task == "analyze" and "analysis" in result:
+    #            return_dict["analysis"] = result["analysis"]
+    #        elif task == "explain" and "explanation" in result:
+    #            return_dict["explanation"] = result["explanation"]
+            
+    #        print(f"\n[DEBUG] Returning tool_result:")
+    #        print(f"  - Type: {return_dict['type']}")
+    #        print(f"  - Status: {return_dict['status']}")
+    #        print(f"  - Tool: {return_dict['tool']}")
+    #        print(f"  - requires_tool_response: {return_dict.get('requires_tool_response', False)}")
+    #        print(f"  - Content: {return_dict['content']}")
+            
+    #        return return_dict
+            
+    #    except Exception as e:
+    #        print(f"\n[DEBUG] MultiMath execution FAILED with exception:")
+    #        print(f"  - Exception type: {type(e).__name__}")
+    #        print(f"  - Exception message: {str(e)}")
+    #        import traceback
+    #        traceback.print_exc()
+            
+    #        logger.error(f"MultiMath execution failed: {e}")
+    #        return {
+    #            "type": "error",
+    #            "status": "FAILED",
+    #            "content": f"MultiMath execution error: {str(e)}",
+    #            "error": str(e)
+    #        }
+    
+    
+    def _execute_easyocr(self, tool_content: Dict[str, Any]) -> Dict[str, Any]:
+        """执行EasyOCR工具调用"""
+        
+        print(f"\n[DEBUG _execute_easyocr] START")
+        print(f"  - Tool content: {tool_content}")
+        print(f"  - Tool available: {self.easyocr_tool is not None}")
+        
+        if not self.easyocr_tool:
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": "EasyOCR tool not initialized",
+                "error": "Tool not initialized"
+            }
+        
+        # 提取实际参数
+        if "parameters" in tool_content:
+            parameters = tool_content["parameters"]
+        else:
+            # 移除 "tool" 键，保留其他所有参数
+            parameters = {k: v for k, v in tool_content.items() if k != "tool"}
+        
+        print(f"  - Parameters extracted: {parameters}")
+        print(f"  - Task type: {parameters.get('task', 'N/A')}")
+        
+        try:
+            print(f"\n[DEBUG] Calling easyocr_tool.execute()...")
+            
+            # 执行EasyOCR
+            result = self.easyocr_tool.execute(parameters)
+            
+            print(f"\n[DEBUG] EasyOCR execution complete")
+            print(f"  - Result type: {type(result)}")
+            print(f"  - Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+            print(f"  - Success: {result.get('success', False) if isinstance(result, dict) else 'N/A'}")
+            print(f"  - Task: {result.get('task', 'N/A') if isinstance(result, dict) else 'N/A'}")
+            
+            # 检查是否有错误
+            if "error" in result:
+                print(f"  - ERROR in result: {result['error']}")
+                return {
+                    "type": "error",
+                    "status": "FAILED",
+                    "content": result["error"],
+                    "error": result["error"],
+                    "error_type": result.get("error_type", "Unknown")
+                }
+            
+            # 成功情况
+            task = result.get("task", "unknown")
+            num_detections = result.get("num_detections", 0)
+            all_texts = result.get("all_texts", [])
+            processed_output = result.get("processed_output", "")
+            
+            print(f"\n[DEBUG] Processing successful EasyOCR result:")
+            print(f"  - Task: {task}")
+            print(f"  - Num detections: {num_detections}")
+            print(f"  - All texts preview: {all_texts[:5]}...")  # 显示前5个
+            print(f"  - Processed output preview: {processed_output[:200]}...")
+            
+            # 构建返回内容
+            if task == "detect_and_recognize":
+                content = f"Detected and recognized {num_detections} text regions"
+            elif task == "detect_only":
+                num_regions = result.get("num_regions", 0)
+                content = f"Detected {num_regions} text regions"
+            elif task == "recognize_only":
+                content = f"Recognized text: {len(all_texts)} items"
+            elif task == "extract_math":
+                summary = result.get("summary", {})
+                content = f"Extracted math elements: {summary.get('num_numbers', 0)} numbers, {summary.get('num_symbols', 0)} symbols"
+            elif task == "extract_table":
+                table_data = result.get("table_data", [])
+                content = f"Extracted table with {len(table_data)} rows"
+            elif task == "extract_by_region":
+                detections = result.get("detections", [])
+                content = f"Extracted {len(detections)} text items from specified region"
+            else:
+                content = f"EasyOCR completed task: {task}"
+            
+            # 成功返回
+            return_dict = {
+                "type": "tool_result",
+                "status": "SUCCESS",
+                "tool": "easyocr",
+                "content": content,
+                "result": result,
+                "requires_tool_response": True,
+                "task": task,
+                "num_detections": num_detections,
+                "all_texts": all_texts,
+                "processed_output": processed_output,
+                "success": result.get("success", True)
+            }
+            
+            # 根据不同任务类型添加特定信息
+            if task == "extract_math":
+                return_dict["math_elements"] = result.get("math_elements", {})
+                return_dict["combined_expressions"] = result.get("combined_expressions", [])
+            elif task == "extract_table":
+                return_dict["table_data"] = result.get("table_data", [])
+            
+            print(f"\n[DEBUG] Returning tool_result:")
+            print(f"  - Type: {return_dict['type']}")
+            print(f"  - Status: {return_dict['status']}")
+            print(f"  - Tool: {return_dict['tool']}")
+            print(f"  - requires_tool_response: {return_dict.get('requires_tool_response', False)}")
+            print(f"  - Content: {return_dict['content']}")
+            
+            return return_dict
+            
+        except Exception as e:
+            print(f"\n[DEBUG] EasyOCR execution FAILED with exception:")
+            print(f"  - Exception type: {type(e).__name__}")
+            print(f"  - Exception message: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            logger.error(f"EasyOCR execution failed: {e}")
+            return {
+                "type": "error",
+                "status": "FAILED",
+                "content": f"EasyOCR execution error: {str(e)}",
+                "error": str(e)
+            }
+
+    def _extract_solution_from_result(self, result: Dict[str, Any]) -> str:
+        """从 DiagramFormalizer 结果中提取 solution - 更灵活的版本"""
+        # 首先检查是否已有 solution
+        solution = result.get("solution", "")
+        if solution:
+            return str(solution).strip()
+        
+        # 检查 final_answer 字段
+        if "final_answer" in result and result["final_answer"]:
+            return str(result["final_answer"]).strip()
+        
+        import re
+        
+        # 可能的答案模式（更宽松）
+        answer_patterns = [
+            r'(?:answer|solution)\s*(?:is|=|:)\s*(\d+\.?\d*)',  # answer is 15, solution = 15
+            r'(?:x|y|z)\s*=\s*(\d+\.?\d*)',                     # x = 15, y = 15
+            r'(?:equals?|is)\s+(\d+\.?\d*)',                    # equals 15, is 15
+            r'∠\s*\w+\s*=\s*(\d+\.?\d*)',                       # ∠ABC = 15
+            r'measure.*?(?:is|equals?)\s*(\d+\.?\d*)',          # measure is 15
+            r'(?:therefore|thus|so).*?(\d+\.?\d*)',             # therefore 15
+            r'final.*?(\d+\.?\d*)',                             # final answer: 15
+            r'(?:The answer is|Answer:)\s*(\d+\.?\d*)',         # The answer is 15
+        ]
+        
+        # 先尝试从 steps 的最后几步中提取
+        if result.get("steps"):
+            for step in reversed(result.get("steps", [])[-3:]):  # 检查最后3步
+                for pattern in answer_patterns:
+                    match = re.search(pattern, str(step), re.IGNORECASE)
+                    if match:
+                        solution = match.group(1)
+                        print(f"[DEBUG] Extracted solution '{solution}' from step: {step[:50]}...")
+                        return solution
+        
+        # 再尝试从 formalized_output 中提取
+        if result.get("formalized_output"):
+            output = result["formalized_output"]
+            for pattern in answer_patterns:
+                matches = re.findall(pattern, output, re.IGNORECASE)
+                if matches:
+                    # 使用最后一个匹配（通常是最终答案）
+                    solution = matches[-1]
+                    print(f"[DEBUG] Extracted solution '{solution}' from formalized_output")
+                    return solution
+        
+        # 尝试从 raw_response 中提取
+        if result.get("raw_response"):
+            raw = result["raw_response"]
+            for pattern in answer_patterns:
+                matches = re.findall(pattern, raw, re.IGNORECASE)
+                if matches:
+                    solution = matches[-1]
+                    print(f"[DEBUG] Extracted solution '{solution}' from raw_response")
+                    return solution
+        
+        # 最后尝试提取任何合理的数字
+        text_to_search = str(result.get("formalized_output", "")) + " " + str(result.get("raw_response", ""))
+        if text_to_search.strip():
+            numbers = re.findall(r'\b\d+\.?\d*\b', text_to_search)
+            # 过滤掉太大或太小的数字
+            reasonable_numbers = []
+            for num in numbers:
+                try:
+                    val = float(num)
+                    if 0 < val < 1000:  # 合理的答案范围
+                        reasonable_numbers.append(num)
+                except:
+                    pass
+            
+            if reasonable_numbers:
+                solution = reasonable_numbers[-1]  # 使用最后一个
+                print(f"[DEBUG] Extracted solution '{solution}' as last reasonable number")
+                return solution
+        
+        print(f"[DEBUG] No solution found in result")
+        return ""
+    
+    #def _is_direct_answer(self, action: str) -> bool:
+    #    """检查是否是直接答案格式"""
+    #    cleaned = action.strip()
+        # 检查各种答案格式
+    #    return (
+    #        cleaned.startswith("answer_question(") or
+    #        cleaned.startswith("Answer:") or
+    #        cleaned.startswith("answer:") or
+            # 检查<answer>标签
+    #        "<answer>" in cleaned or
+            # 简单的文本答案（不包含函数调用格式）
+    #        ("(" not in cleaned and "<" not in cleaned)
+    #    )
+    
     
     def _is_direct_answer(self, action: str) -> bool:
-        """Check if the action is a direct answer format"""
+        """检查是否是直接答案格式 - 最简化版本"""
         cleaned = action.strip()
-        # Check various answer formats
-        return (
-            cleaned.startswith("answer_question(") or
-            cleaned.startswith("Answer:") or
-            cleaned.startswith("answer:") or
-            # Check <answer> tag
-            "<answer>" in cleaned or
-            # Simple text answer (no function call format)
-            ("(" not in cleaned and "<" not in cleaned)
-        )
+        
+        # 空字符串不是答案
+        if not cleaned:
+            return False
+        
+        # 工具调用不是直接答案
+        if "<tool_call>" in cleaned:
+            return False
+        
+        # 其他所有内容都视为直接答案
+        return True
     
     def _process_direct_answer(self, action: str) -> Dict[str, Any]:
-        """Process a direct answer (compatible with original logic)"""
+        """处理直接答案（兼容原有逻辑）"""
         cleaned_action = action.strip()
         
-        # Check <answer> tag
+        # 检查<answer>标签
         import re
         answer_match = re.search(r'<answer>(.*?)</answer>', cleaned_action, re.DOTALL)
         if answer_match:
@@ -1110,9 +2709,9 @@ class VisionQAEnv:
                 "source": "answer_tag"
             }
         
-        # Extract answer content
+        # 提取答案内容
         if cleaned_action.startswith("answer_question(") and cleaned_action.endswith(")"):
-            # Extract answer from formatted action
+            # 从格式化动作中提取答案
             try:
                 match = re.search(r'answer="([^"]*)"', cleaned_action)
                 if match:
@@ -1123,7 +2722,7 @@ class VisionQAEnv:
             except Exception:
                 answer = cleaned_action
         else:
-            # Remove common prefixes
+            # 移除常见前缀
             for prefix in ["Answer:", "answer:", "A:", "a:"]:
                 if cleaned_action.startswith(prefix):
                     answer = cleaned_action[len(prefix):].strip()
@@ -1140,174 +2739,432 @@ class VisionQAEnv:
     
     
     def _handle_task_validation(self, action: str, action_result: Dict[str, Any]) -> Tuple[float, bool, str, Dict]:
-        """Handle task validation logic - supports reflection mechanism"""
-        # If action execution failed, apply small penalty
-        if action_result.get("status") == "FAILED":
-            return -0.1, False, action_result.get("error", "Action failed"), {"error": True}
+        """处理任务验证逻辑 - 支持反思机制"""
         
-        # Check if the result is an answer type
-        if action_result.get("type") == "answer":
-            # ⭐ New: First check if the task has a step method (supports reflection)
-            if hasattr(self.task, 'step') and hasattr(self.task, 'enable_reflection'):
-                # Use the task's step method to handle answers and reflection
-                try:
-                    # Call task's step method
-                    task_obs, task_reward, task_done, task_truncated, task_info = self.task.step(action)
+        # ⭐ 添加调试
+        print(f"\n[DEBUG _handle_task_validation]")
+        print(f"  - action_result type: {action_result.get('type')}")
+        print(f"  - action_result status: {action_result.get('status')}")
+        
+        try:
+            # 如果动作执行失败，给予小惩罚
+            if action_result.get("status") == "FAILED":
+                return -0.1, False, action_result.get("error", "Action failed"), {"error": True}
+            
+            # ===== 新增：处理格式错误 =====
+            if action_result.get("type") == "format_error":
+                if hasattr(self.task, 'enable_reflection') and self.task.enable_reflection:
+                    current_attempt = getattr(self.task, 'current_attempt', 0)
+                    max_attempts = getattr(self.task, 'max_attempts', 1)
                     
-                    # If task is not done (needs reflection)
-                    if not task_done and self.task.enable_reflection:
-                        # Update environment observation with reflection-related info
-                        if isinstance(task_obs, dict):
-                            # Merge task-returned observation into environment observation
-                            self.current_question = task_obs.get('question', self.current_question)
-                            self.task_info.update(task_obs)
+                    if current_attempt < max_attempts:
+                        return -0.05, False, f"Format error: {action_result.get('error')}. Please use the correct format.", {
+                            "format_error": True,
+                            "error": action_result.get('error'),
+                            "needs_retry": True
+                        }
+                
+                return -0.1, False, f"Format error: {action_result.get('error')}", {"format_error": True}
+            
+            # 检查是否是答案类型的结果
+            if action_result.get("type") == "answer":
+                print(f"  - Entering answer validation branch")
+                print(f"  - Task has step method: {hasattr(self.task, 'step')}")
+                print(f"  - Task has enable_reflection: {hasattr(self.task, 'enable_reflection')}")
+                
+                # ⭐ 新增：先检查任务是否有step方法（支持反思）
+                if hasattr(self.task, 'step') and hasattr(self.task, 'enable_reflection'):
+                    # 使用任务的step方法来处理答案和反思
+                    try:
+                        # 调用task的step方法
+                        task_obs, task_reward, task_done, task_truncated, task_info = self.task.step(action)
                         
-                        # Return intermediate result, allow continuation
-                        return task_reward, False, task_info.get('message', 'Reflection needed'), task_info
-                    
-                    # Task completed (correct or max attempts reached)
-                    return task_reward, task_done, task_info.get('message', 'Task completed'), task_info
-                    
-                except Exception as e:
-                    logger.error(f"Error calling task.step: {e}")
-                    # If task.step fails, fall back to validate method
-            
-            # Fallback: Use task's validation logic (old way)
-            reward, done, message, validation_info = self.task.validate(
-                chat_history=self.chat.get_history(),
-                observation=action_result,
-                full_history=self.action_history
-            )
-            
-            # ⭐ Check if reflection should continue
-            if hasattr(self.task, 'enable_reflection') and self.task.enable_reflection:
-                # Check current attempt count
-                current_attempt = getattr(self.task, 'current_attempt', 0)
-                max_attempts = getattr(self.task, 'max_attempts', 1)
+                        print(f"  - Task step returned: done={task_done}, reward={task_reward}")
+                        print(f"  - Task info keys: {list(task_info.keys()) if isinstance(task_info, dict) else 'Not a dict'}")
+                        
+                        # 如果任务还没完成（需要反思）
+                        if not task_done and self.task.enable_reflection:
+                            # 更新环境的观察，包含反思相关信息
+                            if isinstance(task_obs, dict):
+                                # 合并task返回的观察到环境观察中
+                                self.current_question = task_obs.get('question', self.current_question)
+                                self.task_info.update(task_obs)
+                            
+                            # 返回中间结果，允许继续
+                            return task_reward, False, task_info.get('message', 'Reflection needed'), task_info
+                        
+                        # 任务完成（正确或达到最大尝试）
+                        return task_reward, task_done, task_info.get('message', 'Task completed'), task_info
+                        
+                    except Exception as e:
+                        logger.error(f"Error calling task.step: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        # 如果task.step失败，回退到validate方法
                 
-                # If answer is wrong and there are remaining attempts
-                if reward == 0 and current_attempt < max_attempts:
-                    # Prepare reflection info
-                    reflection_info = {
-                        "needs_reflection": True,
-                        "current_attempt": current_attempt,
-                        "max_attempts": max_attempts,
-                        "previous_answer": action_result.get("content", ""),
-                        "feedback": validation_info.get("feedback", "Your answer is incorrect. Please try again.")
-                    }
-                    
-                    # Merge validation info and reflection info
-                    validation_info.update(reflection_info)
-                    
-                    # Return non-terminated state, allow more attempts
-                    return 0.0, False, f"Incorrect answer. Attempt {current_attempt}/{max_attempts}", validation_info
-            
-            # Normal return (no reflection or reflection ended)
-            return reward, done, message, validation_info
-        
-        # DeepEyes intermediate feedback, grant intermediate reward
-        elif action_result.get("type") == "deepeyes_feedback":
-            intermediate_reward = action_result.get("intermediate_reward", 0.1)
-            return intermediate_reward, False, "DeepEyes tool executed", {"deepeyes_intermediate": True}
-        
-        # Grounding DINO tool result, grant intermediate reward
-        elif action_result.get("type") == "tool_result" and action_result.get("tool") == "grounding_dino":
-            # Grant reward based on detection result
-            result = action_result.get("result", {})
-            num_detections = result.get("num_detections", 0)
-            
-            if num_detections > 0:
-                reward = 0.2  # Successfully detected objects
-                message = f"Detected {num_detections} objects successfully"
-            else:
-                reward = 0.05  # Execution succeeded but no objects detected
-                message = "No objects detected"
+                # 回退：使用任务的验证逻辑（旧方式）
+                print(f"  - Falling back to task.validate")
+                reward, done, message, validation_info = self.task.validate(
+                    chat_history=self.chat.get_history(),
+                    observation=action_result,
+                    full_history=self.action_history
+                )
                 
-            return reward, False, message, {"tool_executed": "grounding_dino", "detections": num_detections}
-        
-        # ChartMoE tool result, grant intermediate reward
-        elif action_result.get("type") == "tool_result" and action_result.get("tool") == "chartmoe":
-            # Grant reward based on task type
-            task_type = action_result.get("task_type", "unknown")
-            output = action_result.get("output", "")
+                # ⭐ 检查是否需要继续反思
+                if hasattr(self.task, 'enable_reflection') and self.task.enable_reflection:
+                    # 检查当前尝试次数
+                    current_attempt = getattr(self.task, 'current_attempt', 0)
+                    max_attempts = getattr(self.task, 'max_attempts', 1)
+                    
+                    # 如果答案错误且还有尝试机会
+                    if reward == 0 and current_attempt < max_attempts:
+                        # 准备反思信息
+                        reflection_info = {
+                            "needs_reflection": True,
+                            "current_attempt": current_attempt,
+                            "max_attempts": max_attempts,
+                            "previous_answer": action_result.get("content", ""),
+                            "feedback": validation_info.get("feedback", "Your answer is incorrect. Please try again.")
+                        }
+                        
+                        # 合并验证信息和反思信息
+                        validation_info.update(reflection_info)
+                        
+                        # 返回非结束状态，允许继续尝试
+                        return 0.0, False, f"Incorrect answer. Attempt {current_attempt}/{max_attempts}", validation_info
+                
+                # 正常返回（没有反思或反思结束）
+                return reward, done, message, validation_info
             
-            if task_type == "to_table":
-                # Simple table row count
-                lines = output.strip().split('\n') if output else []
-                rows = len([l for l in lines if '|' in l and not l.strip().startswith('|--')])
-                if rows > 0:
-                    reward = 0.25  # Successfully extracted table
-                    message = f"Extracted table with {rows} data rows"
+            # DeepEyes工具反馈，给予中间奖励
+            elif action_result.get("type") == "tool_result" and action_result.get("tool") == "deepeyes":
+                # 根据工具使用给予奖励
+                tool_used = action_result.get("tool_used", "")
+                if tool_used in ["image_zoom_in_tool", "image_rotate_tool"]:
+                    reward = 0.15  # 成功使用工具
+                    message = f"Successfully used {tool_used}"
                 else:
-                    reward = 0.1  # Execution succeeded but table is empty
-                    message = "Table extraction completed but no data found"
+                    reward = 0.1
+                    message = "DeepEyes tool executed"
+                    
+                return reward, False, message, {"tool_executed": "deepeyes", "tool_used": tool_used}
             
-            elif task_type in ["describe", "analyze"]:
-                reward = 0.3  # Description or analysis task, higher reward
-                message = f"ChartMoE completed {task_type} task"
+            # Grounding DINO工具结果，给予中间奖励
+            elif action_result.get("type") == "tool_result" and action_result.get("tool") == "grounding_dino":
+                # 根据检测结果给予奖励
+                result = action_result.get("result", {})
+                num_detections = result.get("num_detections", 0)
+                
+                if num_detections > 0:
+                    reward = 0.2  # 成功检测到对象
+                    message = f"Detected {num_detections} objects successfully"
+                else:
+                    reward = 0.05  # 执行成功但没有检测到对象
+                    message = "No objects detected"
+                    
+                return reward, False, message, {"tool_executed": "grounding_dino", "detections": num_detections}
             
-            elif task_type == "extract_data":
-                reward = 0.25  # Data extraction
-                message = "ChartMoE extracted chart data"
+            
+            # MultiMath Server 工具结果，给予中间奖励
+            elif action_result.get("type") == "tool_result" and action_result.get("tool") == "multimath_server":
+                # 设置工具反馈
+                self.pending_tool_feedback = action_result.get("result", {})
+                self.pending_tool_feedback["tool"] = "multimath_server"  # 确保有 tool 字段
+                self.requires_tool_response = True
+                
+                # 根据是否有答案给予奖励
+                if action_result.get("success") and action_result.get("answer"):
+                    reward = 0.35  # 成功求解，较高奖励
+                    message = f"MultiMath Server solved the problem: {action_result.get('answer')}"
+                else:
+                    reward = 0.1  # 执行成功但没有明确答案
+                    message = "MultiMath Server processed the problem"
+                    
+                return reward, False, message, {
+                    "tool_executed": "multimath_server", 
+                    "has_answer": bool(action_result.get("answer"))
+                }
+            
+            
+            elif action_result.get("type") == "tool_result" and action_result.get("tool") == "sam2":
+                # 根据任务类型给予奖励
+                task = action_result.get("task", "unknown")
+                num_masks = action_result.get("num_masks", 0)
+                results = action_result.get("results", [])
+                
+                if task == "smart_medical_segment":
+                    detected_organ = action_result.get("detected_organ", None)
+                    if detected_organ:
+                        reward = 0.3  # 成功识别器官并分割
+                        message = f"Successfully segmented {detected_organ} region"
+                    else:
+                        reward = 0.2  # 执行了分割但没有特定器官
+                        message = f"Performed segmentation with {num_masks} masks"
+                
+                elif task in ["point_segment", "multi_point_segment"]:
+                    if num_masks > 0:
+                        # 找到最佳掩码
+                        best_coverage = max([r.get('coverage_percent', 0) for r in results]) if results else 0
+                        reward = 0.15 + min(0.15, best_coverage / 100)  # 基于覆盖率的奖励
+                        message = f"Segmented with {best_coverage:.1f}% coverage"
+                    else:
+                        reward = 0.05
+                        message = "Segmentation executed but no masks generated"
+                
+                elif task == "box_segment":
+                    if results and results[0].get('coverage_percent', 0) > 0:
+                        coverage = results[0]['coverage_percent']
+                        reward = 0.2
+                        message = f"Box segmentation with {coverage:.1f}% coverage"
+                    else:
+                        reward = 0.05
+                        message = "Box segmentation executed"
+                
+                elif task == "grid_search_segment":
+                    best_result = action_result.get("best_result", {})
+                    if best_result:
+                        reward = 0.25
+                        message = f"Grid search found optimal segmentation"
+                    else:
+                        reward = 0.1
+                        message = "Grid search completed"
+                
+                else:
+                    reward = 0.15  # 其他任务类型
+                    message = f"SAM2 completed task: {task}"
+                    
+                return reward, False, message, {"tool_executed": "sam2", "task": task, "num_masks": num_masks}
+
+
+            
+            # 对SymPy几何特殊处理
+            elif action_result.get("tool") == "sympy_geometry":
+                self.pending_tool_feedback = {
+                    "tool": "sympy_geometry",
+                    "function": action_result.get("function", "unknown"),
+                    "calculation_result": action_result.get("calculation_result", {}),
+                    "formatted_output": action_result.get("formatted_output", ""),
+                    "original_question": self.current_question,
+                    "success": action_result.get("success", False)
+                }
+                
+                print(f"\n[DEBUG VisionQAEnv.step] Set pending SymPy Geometry feedback:")
+                print(f"  - function: {self.pending_tool_feedback['function']}")
+                print(f"  - result: {self.pending_tool_feedback['calculation_result']}")
+                print(f"  - formatted: {self.pending_tool_feedback['formatted_output']}")
+                print(f"  - requires_tool_response: {self.requires_tool_response}")
+            
+
+            # 对 MultiMath 特殊处理
+            elif action_result.get("tool") == "multimath":
+                self.pending_tool_feedback = {
+                    "tool": "multimath",
+                    "answer": action_result.get("answer", ""),
+                    "method": action_result.get("method", "MultiMath-7B"),
+                    "problem_type": action_result.get("problem_type", "general"),
+                    "has_image": action_result.get("has_image", False),
+                    "original_question": self.current_question,
+                    "success": action_result.get("success", False),
+                    "result": action_result.get("result", {})
+                }
+                
+                # 如果有步骤，也包含
+                if "steps" in action_result:
+                    self.pending_tool_feedback["steps"] = action_result["steps"]
+                
+                print(f"\n[DEBUG VisionQAEnv.step] Set pending MultiMath feedback:")
+                print(f"  - answer: {self.pending_tool_feedback['answer']}")
+                print(f"  - method: {self.pending_tool_feedback['method']}")
+                print(f"  - problem_type: {self.pending_tool_feedback['problem_type']}")
+                print(f"  - has_image: {self.pending_tool_feedback['has_image']}")
+                print(f"  - requires_tool_response: {self.requires_tool_response}")
+            
+            
+            # ChartMoE工具结果，给予中间奖励
+            elif action_result.get("type") == "tool_result" and action_result.get("tool") == "chartmoe":
+                # 根据任务类型给予奖励
+                task_type = action_result.get("task_type", "unknown")
+                output = action_result.get("output", "")
+                
+                if task_type == "to_table":
+                    # 简单计算表格行数
+                    lines = output.strip().split('\n') if output else []
+                    rows = len([l for l in lines if '|' in l and not l.strip().startswith('|--')])
+                    if rows > 0:
+                        reward = 0.25  # 成功提取表格
+                        message = f"Extracted table with {rows} data rows"
+                    else:
+                        reward = 0.1  # 执行成功但表格为空
+                        message = "Table extraction completed but no data found"
+                
+                elif task_type in ["describe", "analyze"]:
+                    reward = 0.3  # 描述或分析任务，较高奖励
+                    message = f"ChartMoE completed {task_type} task"
+                
+                elif task_type == "extract_data":
+                    reward = 0.25  # 数据提取
+                    message = "ChartMoE extracted chart data"
+                
+                else:
+                    reward = 0.15  # 其他任务类型
+                    message = f"ChartMoE completed task: {task_type}"
+                    
+                return reward, False, message, {"tool_executed": "chartmoe", "task_type": task_type}
+            
+            # DiagramFormalizer工具结果，给予中间奖励
+            elif action_result.get("type") == "tool_result" and action_result.get("tool") == "diagram_formalizer":
+                # 根据任务类型给予奖励
+                task_type = action_result.get("task_type", "unknown")
+                
+                if task_type == "formalize":
+                    reward = 0.3  # 形式化任务，较高奖励
+                    message = "Successfully formalized geometric problem"
+                elif task_type == "solve":
+                    reward = 0.35  # 求解任务，最高奖励
+                    message = "Successfully solved geometric problem"
+                elif task_type == "analyze":
+                    reward = 0.25  # 分析任务
+                    message = "Successfully analyzed geometric relationships"
+                elif task_type == "extract_constraints":
+                    constraints = action_result.get("constraints", [])
+                    reward = 0.2 if constraints else 0.1
+                    message = f"Extracted {len(constraints)} geometric constraints"
+                elif task_type == "prove":
+                    proof_steps = action_result.get("proof_steps", [])
+                    reward = 0.3 if proof_steps else 0.15
+                    message = f"Generated proof with {len(proof_steps)} steps"
+                else:
+                    reward = 0.15  # 其他任务类型
+                    message = f"DiagramFormalizer completed task: {task_type}"
+                    
+                return reward, False, message, {"tool_executed": "diagram_formalizer", "task_type": task_type}
+    
+            
+            # SymPy几何工具结果，给予中间奖励
+            elif action_result.get("type") == "tool_result" and action_result.get("tool") == "sympy_geometry":
+                # 根据计算类型给予奖励
+                function = action_result.get("function", "unknown")
+                calc_result = action_result.get("calculation_result", {})
+                
+                if function in ["triangle_angle", "triangle_all_angles", "triangle_area"]:
+                    reward = 0.25  # 三角形计算
+                    message = f"Calculated triangle properties using {function}"
+                elif function == "pythagorean":
+                    reward = 0.2  # 勾股定理
+                    message = f"Applied Pythagorean theorem"
+                elif function in ["circle_from_points", "inscribed_angle"]:
+                    reward = 0.25  # 圆相关计算
+                    message = f"Performed circle calculations"
+                elif function == "polygon_area":
+                    reward = 0.2  # 多边形计算
+                    message = f"Calculated polygon properties"
+                else:
+                    reward = 0.15  # 其他计算
+                    message = f"SymPy Geometry completed: {function}"
+                    
+                return reward, False, message, {"tool_executed": "sympy_geometry", "function": function}
+            
+            
+            # EasyOCR工具结果，给予中间奖励
+            elif action_result.get("type") == "tool_result" and action_result.get("tool") == "easyocr":
+                # 根据任务类型给予奖励
+                task = action_result.get("task", "unknown")
+                num_detections = action_result.get("num_detections", 0)
+                
+                if task == "detect_and_recognize":
+                    if num_detections > 0:
+                        reward = 0.2  # 成功检测和识别文本
+                        message = f"Detected and recognized {num_detections} text regions"
+                    else:
+                        reward = 0.05  # 执行成功但没有检测到文本
+                        message = "No text detected"
+                
+                elif task == "extract_math":
+                    math_elements = action_result.get("math_elements", {})
+                    total_math = sum(len(v) for v in math_elements.values())
+                    if total_math > 0:
+                        reward = 0.25  # 成功提取数学内容
+                        message = f"Extracted {total_math} math elements"
+                    else:
+                        reward = 0.1  # 执行成功但没有数学内容
+                        message = "No math content found"
+                
+                elif task == "extract_table":
+                    table_data = action_result.get("table_data", [])
+                    if table_data:
+                        reward = 0.25  # 成功提取表格
+                        message = f"Extracted table with {len(table_data)} rows"
+                    else:
+                        reward = 0.1  # 执行成功但没有表格
+                        message = "No table structure found"
+                
+                else:
+                    reward = 0.15  # 其他任务类型
+                    message = f"EasyOCR completed task: {task}"
+                    
+                return reward, False, message, {"tool_executed": "easyocr", "task": task, "detections": num_detections}
+            
+            # ⭐ 新增：工具调用等待响应
+            elif action_result.get("type") == "tool_call":
+                # 工具调用已提交，等待执行
+                return 0.0, False, "Tool call submitted", {"tool_call_pending": True}
+            
+            # ⭐ 新增：思考过程（如果启用了结构化输出）
+            elif action_result.get("type") == "thinking":
+                # 思考步骤，不给奖励但允许继续
+                return 0.0, False, "Processing thoughts", {"thinking_step": True}
+            
+            # 对于其他动作，给予中间奖励
+            elif action_result.get("status") == "SUCCESS":
+                # 检查是否是有助于解决任务的动作
+                helpful_actions = ["analyze_image", "extract_text", "detect_objects", "request_info"]
+                action_name = action_result.get("action", "")
+                
+                if any(helpful in action_name for helpful in helpful_actions):
+                    reward = 0.1  # 有用的中间步骤
+                    message = f"Executed {action_name} successfully"
+                else:
+                    reward = 0.05  # 中性动作
+                    message = f"Action {action_name} completed"
+                
+                return reward, False, message, {"intermediate_action": True}
+            
+            # ⭐ 新增：处理错误但不是失败的情况
+            elif action_result.get("type") == "error" and action_result.get("error") != "Action failed":
+                # 某些错误可能是可恢复的（如格式错误）
+                error_msg = action_result.get("error", "Unknown error")
+                
+                # 检查是否是反思相关的错误
+                if hasattr(self.task, 'enable_reflection') and self.task.enable_reflection:
+                    current_attempt = getattr(self.task, 'current_attempt', 0)
+                    max_attempts = getattr(self.task, 'max_attempts', 1)
+                    
+                    if current_attempt < max_attempts:
+                        # 给予机会重试
+                        return -0.05, False, f"Error: {error_msg}. Please try again.", {
+                            "error": error_msg,
+                            "recoverable": True,
+                            "attempt": current_attempt
+                        }
+                
+                # 不可恢复的错误
+                return -0.1, False, f"Error: {error_msg}", {"error": error_msg}
             
             else:
-                reward = 0.15  # Other task types
-                message = f"ChartMoE completed task: {task_type}"
-                
-            return reward, False, message, {"tool_executed": "chartmoe", "task_type": task_type}
+                # 其他未知情况
+                return 0, False, "Action processed", {"unknown_action": True}
         
-        # ⭐ New: Tool call awaiting response
-        elif action_result.get("type") == "tool_call":
-            # Tool call submitted, awaiting execution
-            return 0.0, False, "Tool call submitted", {"tool_call_pending": True}
-        
-        # ⭐ New: Thinking process (if structured output is enabled)
-        elif action_result.get("type") == "thinking":
-            # Thinking step, no reward but allow continuation
-            return 0.0, False, "Processing thoughts", {"thinking_step": True}
-        
-        # For other actions, grant intermediate reward
-        elif action_result.get("status") == "SUCCESS":
-            # Check if the action helps solve the task
-            helpful_actions = ["analyze_image", "extract_text", "detect_objects", "request_info"]
-            action_name = action_result.get("action", "")
-            
-            if any(helpful in action_name for helpful in helpful_actions):
-                reward = 0.1  # Useful intermediate step
-                message = f"Executed {action_name} successfully"
-            else:
-                reward = 0.05  # Neutral action
-                message = f"Action {action_name} completed"
-            
-            return reward, False, message, {"intermediate_action": True}
-        
-        # ⭐ New: Handle errors that are not outright failures
-        elif action_result.get("type") == "error" and action_result.get("error") != "Action failed":
-            # Some errors may be recoverable (e.g., format errors)
-            error_msg = action_result.get("error", "Unknown error")
-            
-            # Check if it's a reflection-related error
-            if hasattr(self.task, 'enable_reflection') and self.task.enable_reflection:
-                current_attempt = getattr(self.task, 'current_attempt', 0)
-                max_attempts = getattr(self.task, 'max_attempts', 1)
-                
-                if current_attempt < max_attempts:
-                    # Give opportunity to retry
-                    return -0.05, False, f"Error: {error_msg}. Please try again.", {
-                        "error": error_msg,
-                        "recoverable": True,
-                        "attempt": current_attempt
-                    }
-            
-            # Unrecoverable error
-            return -0.1, False, f"Error: {error_msg}", {"error": error_msg}
-        
-        else:
-            # Other unknown cases
-            return 0, False, "Action processed", {"unknown_action": True}
+        except Exception as e:
+            # ⭐ 捕获异常，确保总是返回4个值
+            print(f"[ERROR] Exception in _handle_task_validation: {e}")
+            import traceback
+            traceback.print_exc()
+            return -0.1, False, f"Validation error: {str(e)}", {"error": str(e)}
+    
+    
     
     def _load_current_image(self):
-        """Load the current task's image"""
+        """加载当前任务的图像"""
         if not self.task:
             return
         
@@ -1321,7 +3178,7 @@ class VisionQAEnv:
         
         image_path = Path(image_path)
         
-        # If path is not absolute, make it relative to dataset path
+        # 如果路径不是绝对路径，相对于数据集路径
         if not image_path.is_absolute():
             image_path = self.dataset_path / image_path
         
@@ -1337,117 +3194,141 @@ class VisionQAEnv:
             self.current_image = None
     
     def _get_obs(self) -> Dict[str, Any]:
-        """Get the current observation"""
+        """获取当前观察 - 修复版本：不立即清空pending_tool_feedback"""
         obs = {
             "text": self.current_question,
-            "question": self.current_question,  # Add question field for agent compatibility
+            "question": self.current_question,  # 添加question字段，兼容agent
             "step": self.current_step,
             "max_steps": self.max_steps,
             "chat_history": self.chat.get_history(),
             "has_image": self.current_image is not None,
             "image": self.current_image if self.current_image else None,
             "image_path": str(self.task.task_data.get("image_path", "")) if self.task else "",
-            "available_tools": list(self.tool_manager.keys())  # Add available tools list
+            "available_tools": list(self.tool_manager.keys())  # 添加可用工具列表
         }
         
-        # ⭐ New: Include pending tool feedback
+        # ⭐ 修改：包含待处理的工具反馈，但不清空
         if self.pending_tool_feedback is not None:
-            obs["tool_feedback"] = self.pending_tool_feedback
+            obs["tool_feedback"] = copy.deepcopy(self.pending_tool_feedback)  # 使用深拷贝
             obs["requires_response"] = self.requires_tool_response
             
-            # Debug output
+            # 调试输出
             print(f"\n[DEBUG _get_obs] Including tool feedback in observation:")
             print(f"  - Tool feedback type: {type(self.pending_tool_feedback)}")
             if isinstance(self.pending_tool_feedback, dict):
+                print(f"  - Tool feedback keys: {list(self.pending_tool_feedback.keys())}")
                 print(f"  - Tool: {self.pending_tool_feedback.get('tool', 'N/A')}")
-                if self.pending_tool_feedback.get('tool') == 'grounding_dino':
+                
+                # 特别关注 DiagramFormalizer 的 solution
+                if self.pending_tool_feedback.get('tool') == 'diagram_formalizer':
+                    print(f"  - Solution: '{self.pending_tool_feedback.get('solution', 'N/A')}'")
+                    print(f"  - Task type: {self.pending_tool_feedback.get('task_type', 'N/A')}")
+                    print(f"  - Formalized output preview: {str(self.pending_tool_feedback.get('formalized_output', ''))[:100]}")
+                    print(f"  - Steps: {len(self.pending_tool_feedback.get('steps', []))} steps")
+                    print(f"  - Analysis: {self.pending_tool_feedback.get('analysis', {})}")
+                elif self.pending_tool_feedback.get('tool') == 'grounding_dino':
                     print(f"  - Num detections: {self.pending_tool_feedback.get('num_detections', 'N/A')}")
                 elif self.pending_tool_feedback.get('tool') == 'chartmoe':
                     print(f"  - Task type: {self.pending_tool_feedback.get('task_type', 'N/A')}")
                     print(f"  - Output preview: {str(self.pending_tool_feedback.get('output', ''))[:100]}")
-                # DeepEyes debug info
-                elif 'observation' in self.pending_tool_feedback:  # DeepEyes feedback
-                    print(f"  - Has observation: True")
-                    print(f"  - Has reward: {'reward' in self.pending_tool_feedback}")
+                elif self.pending_tool_feedback.get('tool') == 'deepeyes':
+                    print(f"  - Tool used: {self.pending_tool_feedback.get('tool_used', 'N/A')}")
+                    print(f"  - Has processed image: {self.pending_tool_feedback.get('has_processed_image', False)}")
+                elif self.pending_tool_feedback.get('tool') == 'easyocr':
+                    print(f"  - Task: {self.pending_tool_feedback.get('task', 'N/A')}")
+                    print(f"  - Num detections: {self.pending_tool_feedback.get('num_detections', 'N/A')}")
+                    print(f"  - All texts preview: {self.pending_tool_feedback.get('all_texts', [])[:3]}")
+                elif self.pending_tool_feedback.get('tool') == 'sam2':
+                    print(f"  - Task: {self.pending_tool_feedback.get('task', 'N/A')}")
+                    print(f"  - Num masks: {self.pending_tool_feedback.get('num_masks', 'N/A')}")
+                    print(f"  - Results count: {len(self.pending_tool_feedback.get('results', []))}")
+                elif self.pending_tool_feedback.get('tool') == 'sympy_geometry':
+                    print(f"  - Function: {self.pending_tool_feedback.get('function', 'N/A')}")
+                    print(f"  - Result: {self.pending_tool_feedback.get('calculation_result', {})}")
+                    print(f"  - Formatted: {self.pending_tool_feedback.get('formatted_output', 'N/A')}")
+                elif self.pending_tool_feedback.get('tool') == 'multimath_server':
+                    print(f"  - Answer: {self.pending_tool_feedback.get('answer', 'N/A')}")
+                    print(f"  - Method: {self.pending_tool_feedback.get('method', 'N/A')}")
+                    print(f"  - Problem type: {self.pending_tool_feedback.get('problem_type', 'N/A')}")
+                    print(f"  - Has image: {self.pending_tool_feedback.get('has_image', False)}")
+                
             print(f"  - requires_response: {self.requires_tool_response}")
 
-            # Clear feedback to avoid sending it repeatedly
-            self.pending_tool_feedback = None
-            self.requires_tool_response = False
+            # ⚠️ 关键修改：删除这两行！不要在这里清空
+            # self.pending_tool_feedback = None  # ❌ 删除
+            # self.requires_tool_response = False  # ❌ 删除
         
-        # Add action-related info
+        # 添加动作相关信息
         if self.enable_actions:
             obs["available_actions"] = self.action_set.list_actions()
             obs["action_history"] = self.action_history
         
-        # Add DeepEyes-related info
-        # Initialize DeepEyes tool
+        # 添加DeepEyes相关信息
         if self.enable_deepeyes_tools:
-            try:
-                if self.deepeyes_version == "v1":
-                    from .tools.deepeyes import DeepEyesV1
-                    self.deepeyes_tool = DeepEyesV1()
-                    tool_name = "DeepEyesV1"
-                else:  # v2
-                    from .tools.mm_process.visual_toolbox_v2 import VisualToolBoxV2
-                    self.deepeyes_tool = VisualToolBoxV2("visual_toolbox_v2", None, None)
-                    tool_name = "visual_toolbox_v2"
-                
-                # Add detailed initialization log
-                print(f"\n[DEBUG] DeepEyes tool initialization:")
-                print(f"  - Tool initialized: {self.deepeyes_tool}")
-                print(f"  - Tool type: {type(self.deepeyes_tool)}")
-                print(f"  - Tool version: {self.deepeyes_version}")
-                print(f"  - Tool name: {tool_name}")
-                
-                # Check tool attributes and methods
-                if hasattr(self.deepeyes_tool, '__name__'):
-                    print(f"  - Tool __name__: {self.deepeyes_tool.__name__}")
-                if hasattr(self.deepeyes_tool, '__module__'):
-                    print(f"  - Tool __module__: {self.deepeyes_tool.__module__}")
-
-                self.deepeyes_initialized = True
-                logger.info(f"DeepEyes tool initialized: {tool_name}")
-                print(f"[DEBUG] ✓ DeepEyes initialization successful")
-                
-            except Exception as e:
-                logger.error(f"Failed to initialize DeepEyes tools: {e}")
-                print(f"\n[DEBUG] ❌ Failed to initialize DeepEyes: {e}")
-                import traceback
-                traceback.print_exc()
-                self.deepeyes_tool = None
-                self.deepeyes_initialized = False
+            obs["deepeyes_enabled"] = self.deepeyes_tool is not None
         
-        # Add Grounding DINO-related info
+        # 添加Grounding DINO相关信息
         if self.enable_grounding_dino:
             obs["grounding_dino_enabled"] = self.grounding_dino_tool is not None
         
-        # Add ChartMoE-related info
+        #添加SAM2相关信息
+        if self.enable_sam2:
+            obs["sam2_enabled"] = self.sam2_tool is not None
+        
+        # 添加ChartMoE相关信息
         if self.enable_chartmoe:
             obs["chartmoe_enabled"] = self.chartmoe_tool is not None
         
-        # Add task info
+        # 添加DiagramFormalizer相关信息
+        if self.enable_diagram_formalizer:
+            obs["diagram_formalizer_enabled"] = self.diagram_formalizer_tool is not None
+
+        # 添加 MultiMath Server 相关信息
+        if self.enable_multimath_server:
+            obs["multimath_server_enabled"] = self.multimath_server_tool is not None
+
+        # 添加SymPy几何相关信息
+        if self.enable_sympy_geometry:
+            obs["sympy_geometry_enabled"] = self.sympy_geometry_tool is not None
+        
+        # 添加EasyOCR相关信息
+        if self.enable_easyocr:
+            obs["easyocr_enabled"] = self.easyocr_tool is not None
+        
+        
+        # 添加任务信息
         if self.task:
             try:
                 task_obs = self.task.get_observation()
-                # Avoid overwriting key fields
+                # 避免覆盖关键字段
                 for key, value in task_obs.items():
-                    if key not in ["text", "question", "image", "image_path"]:
+                    if key not in ["text", "question", "image", "image_path", "tool_feedback"]:  # ⭐ 添加tool_feedback到保护列表
                         obs[key] = value
             except Exception as e:
                 logger.debug(f"Failed to get task observation: {e}")
         
-        # Add time info
+        # 添加时间信息
         if self.start_time:
             elapsed_time = time.time() - self.start_time
             obs["elapsed_time"] = elapsed_time
             if self.time_limit:
                 obs["remaining_time"] = max(0, self.time_limit - elapsed_time)
         
+        
+        if obs.get("tool_feedback", {}).get("tool") == "easyocr" and \
+           obs.get("tool_feedback", {}).get("success", False):
+            # 清除所有强制使用工具的标志
+            for flag in ["must_use_tool", "tool_to_use", "tool_instruction", "easyocr_forced_in_current_step"]:
+                if flag in obs:
+                    obs.pop(flag)
+                    print(f"[DEBUG] Removed flag: {flag}")
+            
+            print("[DEBUG] ✓ Cleared must_use_tool flags after successful EasyOCR execution")
+        
         return obs
     
     def close(self):
-        """Close the environment and clean up resources"""
+        """关闭环境并清理资源"""
         if self.task:
             try:
                 self.task.teardown()
@@ -1461,11 +3342,15 @@ class VisionQAEnv:
         self.current_step = 0
         self.action_history = []
         self.deepeyes_tool = None
-        self.deepeyes_initialized = False
         self.grounding_dino_tool = None
         self.chartmoe_tool = None
+        self.diagram_formalizer_tool = None
+        self.easyocr_tool = None
+        self.sam2_tool = None
+        self.sympy_geometry_tool = None
+        self.multimath_tool = None
         
-        # ⭐ Clean up tool feedback state
+        # ⭐ 清理工具反馈状态
         self.pending_tool_feedback = None
         self.requires_tool_response = False
         

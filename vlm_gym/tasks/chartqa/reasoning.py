@@ -10,7 +10,7 @@ class ChartQAReasoner:
     def __init__(self):
         self.tools = ChartQATools()
         self.templates = ChartQATemplates()
-        self.debug = False  # Can be set via configuration
+        self.debug = False  # 可以通过配置设置
     
     def classify_question(self, question: str) -> str:
         """Classify question type - comprehensive version"""
@@ -97,7 +97,7 @@ class ChartQAReasoner:
         if question_type is None:
             question_type = self.classify_question(question)
         
-        # Call corresponding reasoning method based on question type
+        # 根据问题类型调用相应的推理方法
         reasoning_methods = {
             'counting': self._reason_counting,
             'summation': self._reason_summation,
@@ -121,11 +121,11 @@ class ChartQAReasoner:
         return self._handle_counting_question(question, vlm_output)
     
     def _reason_summation(self, question: str, vlm_output: str) -> Dict[str, Any]:
-        """Handle summation questions - improved version"""
+        """Handle summation questions - 改进版"""
         if self.debug:
             print(f"[DEBUG] Handling summation question: {question[:50]}...")
         
-        # 1. First try to find already calculated sum in VLM output
+        # 1. 先尝试从VLM输出中找到已经计算好的总和
         sum_patterns = [
             r'(?:sum|total|add up to|adds up to)(?:\s+is)?\s*:?\s*(\d+(?:\.\d+)?)',
             r'(?:=|equals?)\s*(\d+(?:\.\d+)?)\s*(?:total|sum|in total)?',
@@ -144,10 +144,10 @@ class ChartQAReasoner:
                     'calculator_used': False
                 }
         
-        # 2. If not found, extract values and calculate
+        # 2. 如果没找到，提取数值并计算
         values = self.tools.extractor.extract_numbers(vlm_output)
         
-        # 3. Smart filtering - key improvement!
+        # 3. 智能过滤 - 关键改进！
         filtered_values = []
         question_lower = question.lower()
         
@@ -155,30 +155,30 @@ class ChartQAReasoner:
             val = v['value']
             label = v.get('label', '').lower()
             
-            # Exclude years (unless question explicitly asks for sum of years)
+            # 排除年份（除非问题明确要求年份的和）
             if 1900 <= val <= 2099 and 'year' not in question_lower:
                 if self.debug:
                     print(f"[DEBUG] Filtering out year: {val}")
                 continue
             
-            # For "sum of X in year Y and Z" type questions,
-            # only include relevant values, not the years themselves
+            # 对于"sum of X in year Y and Z"类型的问题
+            # 只包含相关的数值，不包含年份本身
             if 'in year' in question_lower or 'in the year' in question_lower:
-                # Check if this value might be a year
+                # 检查这个值是否可能是年份
                 if 1900 <= val <= 2099:
                     continue
             
             filtered_values.append(v)
         
         if filtered_values:
-            # Calculate sum
+            # 计算总和
             total = sum(v['value'] for v in filtered_values)
             answer = str(int(total) if total.is_integer() else round(total, 2))
             
-            # Format calculation process
+            # 格式化计算过程
             calculation = f"Sum = {' + '.join(str(v['value']) for v in filtered_values)} = {answer}"
             
-            # Create reasoning description
+            # 创建推理说明
             reasoning = f"Extracted values:\n"
             reasoning += "\n".join([f"- {v.get('label', 'Value')}: {v['value']}" for v in filtered_values])
             reasoning += f"\n{calculation}"
@@ -198,10 +198,10 @@ class ChartQAReasoner:
         if self.debug:
             print(f"[DEBUG] Handling average question: {question[:50]}...")
         
-        # Extract all values
+        # 提取所有数值
         values = self.tools.extractor.extract_numbers(vlm_output)
         
-        # Filter years
+        # 过滤年份
         filtered_values = []
         question_lower = question.lower()
         for v in values:
@@ -210,14 +210,14 @@ class ChartQAReasoner:
                 filtered_values.append(v)
         
         if filtered_values:
-            # Calculate average
+            # 计算平均值
             avg = sum(v['value'] for v in filtered_values) / len(filtered_values)
             answer = str(round(avg, 2))
             
-            # Format calculation process
+            # 格式化计算过程
             calculation = f"Average = ({' + '.join(str(v['value']) for v in filtered_values)}) / {len(filtered_values)} = {answer}"
             
-            # Create reasoning description
+            # 创建推理说明
             reasoning = f"Extracted values:\n"
             reasoning += "\n".join([f"- {v.get('label', 'Value')}: {v['value']}" for v in filtered_values])
             reasoning += f"\n{calculation}"
@@ -237,12 +237,12 @@ class ChartQAReasoner:
         if self.debug:
             print(f"[DEBUG] Handling percentage question: {question[:50]}...")
         
-        # Look for percentage values
+        # 查找百分比数值
         percentage_pattern = r'(\d+(?:\.\d+)?)\s*%'
         matches = re.findall(percentage_pattern, vlm_output)
         
         if matches:
-            # If percentages found, return the first one
+            # 如果找到百分比，返回第一个
             answer = f"{matches[0]}%"
             return {
                 'answer': answer,
@@ -252,10 +252,10 @@ class ChartQAReasoner:
                 'calculator_used': False
             }
         
-        # If percentage needs to be calculated
+        # 如果需要计算百分比
         values = self.tools.extractor.extract_numbers(vlm_output)
         if len(values) >= 2:
-            # Assume first is part, second is whole
+            # 假设第一个是部分，第二个是整体
             part = values[0]['value']
             whole = values[1]['value']
             if whole != 0:
@@ -274,14 +274,14 @@ class ChartQAReasoner:
         return self._extract_simple_answer(vlm_output, 'percentage')
     
     def _reason_difference(self, question: str, vlm_output: str) -> Dict[str, Any]:
-        """Handle difference questions - improved version"""
+        """Handle difference questions - 改进版"""
         if self.debug:
             print(f"[DEBUG] Handling difference question: {question[:50]}...")
         
-        # Extract values
+        # 提取数值
         values = self.tools.extractor.extract_numbers(vlm_output)
         
-        # Filter years
+        # 过滤年份
         filtered_values = []
         for v in values:
             val = v['value']
@@ -291,16 +291,16 @@ class ChartQAReasoner:
         if len(filtered_values) >= 2:
             val1, val2 = filtered_values[0]['value'], filtered_values[1]['value']
             
-            # Check if question needs signed difference
+            # 检查问题是否需要有符号的差值
             question_lower = question.lower()
             if 'how much more' in question_lower or 'how much higher' in question_lower:
-                # Need positive difference
+                # 需要正差值
                 diff = max(val1, val2) - min(val1, val2)
             elif 'how much less' in question_lower or 'how much lower' in question_lower:
-                # Need absolute value of negative difference
+                # 需要负差值的绝对值
                 diff = max(val1, val2) - min(val1, val2)
             else:
-                # Default absolute difference
+                # 默认绝对差值
                 diff = abs(val1 - val2)
             
             answer = str(int(diff) if diff.is_integer() else round(diff, 2))
@@ -318,62 +318,62 @@ class ChartQAReasoner:
         return self._extract_simple_answer(vlm_output, 'difference')
     
     def _reason_ratio(self, question: str, vlm_output: str) -> Dict[str, Any]:
-        """Handle ratio questions - improved version"""
+        """Handle ratio questions - 改进版"""
         if self.debug:
             print(f"[DEBUG] Handling ratio question: {question[:50]}...")
         
-        # Analyze question type
+        # 分析问题类型
         question_lower = question.lower()
         
-        # 1. Check for "A to B" format
-        # e.g.: "What is the ratio of favorable to unfavorable?"
+        # 1. 先检查是否是"A to B"格式
+        # 例如: "What is the ratio of favorable to unfavorable?"
         ratio_pattern = r'ratio\s+of\s+(\w+)\s+to\s+(\w+)'
         match = re.search(ratio_pattern, question_lower)
         
         if match:
             item1, item2 = match.groups()
-            # Find corresponding values in VLM output
-            # This requires more intelligent extraction logic
+            # 在VLM输出中查找对应的数值
+            # 这需要更智能的提取逻辑
             if self.debug:
                 print(f"[DEBUG] Looking for ratio of {item1} to {item2}")
         
-        # 2. Extract values
+        # 2. 提取数值
         values = self.tools.extractor.extract_numbers(vlm_output)
         
-        # Filter out obviously unreasonable values (like years)
+        # 过滤掉明显不合理的数值（如年份）
         filtered_values = []
         for v in values:
             val = v['value']
-            # Exclude years (1900-2099)
+            # 排除年份（1900-2099）
             if not (1900 <= val <= 2099 and 'year' not in v.get('label', '').lower()):
                 filtered_values.append(v)
         
         if len(filtered_values) >= 2:
             val1, val2 = filtered_values[0]['value'], filtered_values[1]['value']
             
-            # 3. Intelligently determine division order
-            # If question contains "A to B", need to ensure correct order
+            # 3. 智能决定除法顺序
+            # 如果问题包含"A to B"，需要确保正确的顺序
             if 'to' in question_lower:
-                # Try to understand which should be numerator
-                # This may require more complex NLP processing
+                # 尝试理解哪个应该是分子
+                # 这可能需要更复杂的NLP处理
                 pass
             
-            # 4. Handle "times" type questions
+            # 4. 处理"times"类型的问题
             if 'times' in question_lower or 'how many times' in question_lower:
-                # For "A is how many times B", usually expect larger value divided by smaller
+                # 对于"A is how many times B"，通常期望较大值除以较小值
                 if val1 > val2:
                     ratio = val1 / val2
                 else:
                     ratio = val2 / val1
             else:
-                # Standard ratio calculation
+                # 标准比率计算
                 if val2 != 0:
                     ratio = val1 / val2
                 else:
                     return self._extract_simple_answer(vlm_output, 'ratio')
             
-            # 5. Format answer
-            # If ratio is close to integer, return integer
+            # 5. 格式化答案
+            # 如果比率接近整数，返回整数
             if abs(ratio - round(ratio)) < 0.01:
                 answer = str(int(round(ratio)))
             else:
@@ -393,17 +393,17 @@ class ChartQAReasoner:
     
     def _reason_comparison(self, question: str, vlm_output: str) -> Dict[str, Any]:
         """Handle comparison questions"""
-        # 1. Extract values
+        # 1. 提取数值
         values = self.tools.extractor.extract_numbers(vlm_output)
         
-        # 2. Calculate difference
+        # 2. 计算差值
         if len(values) >= 2:
             diff = self.tools.calculate_difference(
                 values[0]['value'], 
                 values[1]['value']
             )
             
-            # 3. Format answer
+            # 3. 格式化答案
             template = self.templates.comparison_template()
             reasoning = template['format'].format(
                 element_a=values[0]['label'],
@@ -413,7 +413,7 @@ class ChartQAReasoner:
                 result=diff
             )
             
-            # 4. Decide answer format
+            # 4. 决定答案格式
             answer = str(int(diff) if diff.is_integer() else round(diff, 2))
             
             return {
@@ -428,14 +428,14 @@ class ChartQAReasoner:
     
     def _reason_minmax(self, question: str, vlm_output: str) -> Dict[str, Any]:
         """Handle min/max questions"""
-        # 1. Extract all values
+        # 1. 提取所有数值
         values = self.tools.extractor.extract_numbers(vlm_output)
         
         if values:
-            # 2. Find min/max value
+            # 2. 找出最小/最大值
             result = self.tools.find_min_max(values)
             
-            # 3. Determine if question asks for min or max
+            # 3. 判断问题要求最小还是最大
             question_lower = question.lower()
             if any(word in question_lower for word in ['minimum', 'lowest', 'least', 'smallest']):
                 target = result['min']
@@ -444,7 +444,7 @@ class ChartQAReasoner:
                 target = result['max']
                 answer_type = "Maximum"
             
-            # 4. Format reasoning process
+            # 4. 格式化推理过程
             values_list = "\n".join([f"- {v['label']}: {v['value']}" for v in values])
             template = self.templates.minmax_template()
             reasoning = template['format'].format(
@@ -456,7 +456,7 @@ class ChartQAReasoner:
                 answer=f"{target['label']} ({target['value']})"
             )
             
-            # 5. If question only asks for value or label
+            # 5. 如果问题只要数值或标签
             if 'value' in question_lower or 'number' in question_lower:
                 answer = str(target['value'])
             else:
@@ -467,7 +467,7 @@ class ChartQAReasoner:
                 'reasoning': reasoning,
                 'confidence': 0.85,
                 'structured': True,
-                'structured_answer': target['value']  # Save numeric value for evaluation
+                'structured_answer': target['value']  # 保存数值用于评估
             }
         
         return self._extract_simple_answer(vlm_output, 'minmax')
@@ -477,7 +477,7 @@ class ChartQAReasoner:
         if self.debug:
             print(f"[DEBUG] Handling trend question: {question[:50]}...")
         
-        # Look for trend-related keywords
+        # 查找趋势相关的关键词
         trend_keywords = {
             'increasing': ['increasing', 'rising', 'growing', 'upward', 'going up'],
             'decreasing': ['decreasing', 'falling', 'declining', 'downward', 'going down'],
@@ -500,15 +500,15 @@ class ChartQAReasoner:
     
     def _reason_numerical(self, question: str, vlm_output: str) -> Dict[str, Any]:
         """Handle general numerical questions"""
-        # If "how many" type, redirect to counting handler
+        # 如果是 "how many" 类型，转到计数处理
         if 'how many' in question.lower():
             return self._handle_counting_question(question, vlm_output)
         
-        # Extract values
+        # 提取数值
         values = self.tools.extractor.extract_numbers(vlm_output)
         
         if values:
-            # Usually return the first value found
+            # 通常返回第一个找到的数值
             answer = str(values[0]['value'])
             
             return {
@@ -526,14 +526,14 @@ class ChartQAReasoner:
         if self.debug:
             print(f"[DEBUG] Handling retrieval question: {question[:50]}...")
         
-        # For retrieval questions, answer is usually a label, name, or description
-        # Try to extract a short answer from VLM output
+        # 对于检索类问题，通常答案是一个标签、名称或描述
+        # 尝试从VLM输出中提取简短的答案
         
-        # Look for common answer patterns
+        # 查找常见的答案模式
         answer_patterns = [
             r'(?:The answer is|Answer:)\s*([^.!?\n]+)',
             r'(?:It is|It\'s|This is)\s*([^.!?\n]+)',
-            r'(?:^|\n)([A-Z][^.!?\n]{5,50})(?:\.|!|\?|$)',  # Short sentence starting with capital letter
+            r'(?:^|\n)([A-Z][^.!?\n]{5,50})(?:\.|!|\?|$)',  # 以大写字母开头的短句
         ]
         
         for pattern in answer_patterns:
@@ -548,9 +548,9 @@ class ChartQAReasoner:
                     'calculator_used': False
                 }
         
-        # If no specific pattern found, return first sentence of response
+        # 如果没有找到特定模式，返回整个响应的第一句
         first_sentence = vlm_output.split('.')[0].strip()
-        if len(first_sentence) < 100:  # Ensure not too long
+        if len(first_sentence) < 100:  # 确保不是太长
             return {
                 'answer': first_sentence,
                 'reasoning': "Extracted from response",
@@ -567,11 +567,11 @@ class ChartQAReasoner:
     
     def _extract_simple_answer(self, vlm_output: str, question_type: str) -> Dict[str, Any]:
         """Extract simple answer when structured reasoning fails"""
-        # Try to extract final answer
+        # 尝试提取最后的答案
         answer_patterns = [
             r'(?:The answer is|Answer:)\s*([^.!?\n]+)',
             r'(?:Therefore|Thus|So),?\s*([^.!?\n]+)',
-            r'(?:^|\n)(\d+(?:\.\d+)?)',  # Standalone number
+            r'(?:^|\n)(\d+(?:\.\d+)?)',  # 独立的数字
         ]
         
         for pattern in answer_patterns:
@@ -586,7 +586,7 @@ class ChartQAReasoner:
                     'calculator_used': False
                 }
         
-        # If still not found, return first 100 characters of raw output
+        # 如果还是找不到，返回原始输出的前100个字符
         answer = vlm_output.strip()[:100]
         if len(vlm_output.strip()) > 100:
             answer += "..."
@@ -599,40 +599,40 @@ class ChartQAReasoner:
         }
     
     def _handle_counting_question(self, question: str, vlm_output: str) -> Dict[str, Any]:
-        """Special handling for counting questions - enhanced version"""
+        """特殊处理计数类问题 - 增强版"""
         import re
         
-        # Debug output
+        # 调试输出
         if self.debug:
             print(f"[DEBUG] Handling counting question: {question[:50]}...")
             print(f"[DEBUG] VLM output: {vlm_output[:200]}...")
         
-        # Extended pattern list, ordered by priority
+        # 扩展的模式列表，按优先级排序
         patterns = [
-            # Direct numeric answer (at beginning or standalone line)
-            (r'^(\d{1,2})$', 0.95),  # 1-2 digit number at line start
-            (r'^(\d{1,2})\.$', 0.95),  # 1-2 digit number followed by period
+            # 直接数字答案（在开头或独立行）
+            (r'^(\d{1,2})$', 0.95),  # 1-2位数字在行首
+            (r'^(\d{1,2})\.$', 0.95),  # 1-2位数字后跟句号
             
-            # "X years/values/colors" etc. - limit to 1-2 digits
+            # "X years/values/colors"等 - 限制为1-2位数
             (r'(\d{1,2})\s+(?:years?|values?|colors?|items?|points?|entries?|data\s*points?|countries?|bars?|lines?)', 0.9),
             (r'(?:compares?\s+data\s+for|uses?|has?|contains?|shows?|features?|represents?)\s+(\d{1,2})\s+(?:years?|values?|colors?|countries?)', 0.9),
             
-            # "there are X" format - limit to 1-3 digits
+            # "there are X"格式 - 限制为1-3位数
             (r'there\s+(?:are|is)\s+(\d{1,3})(?:\s|$)', 0.9),
             (r'(?:found|counted|identified)\s+(\d{1,3})(?:\s|$)', 0.9),
             
-            # "X values are/were" format
+            # "X values are/were"格式
             (r'(\d{1,3})\s+(?:values?|points?|items?|countries?|bars?)\s+(?:are|were|is|was)', 0.85),
             
-            # Various expressions containing numbers
+            # 包含数字的各种表达
             (r'(?:answer|total|count)(?:\s+is)?:?\s*(\d{1,3})(?:\s|$)', 0.85),
             (r'(?:exactly|total\s+of|in\s+total)\s+(\d{1,3})(?:\s|$)', 0.85),
             
-            # Extract any standalone number (last resort) - but needs filtering
+            # 提取任何独立的数字（作为最后手段）- 但需要过滤
             (r'(?:^|\s)(\d+)(?:\s|$)', 0.5),
         ]
         
-        # Number word mapping
+        # 数字单词映射
         word_to_num = {
             'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
             'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9,
@@ -641,7 +641,7 @@ class ChartQAReasoner:
             'eighteen': 18, 'nineteen': 19, 'twenty': 20
         }
         
-        # Check number words first
+        # 先检查数字单词
         for word, num in word_to_num.items():
             if word in vlm_output.lower():
                 if self.debug:
@@ -654,10 +654,10 @@ class ChartQAReasoner:
                     'calculator_used': False
                 }
         
-        # Store all found candidate answers
+        # 存储所有找到的候选答案
         candidates = []
         
-        # Try all patterns
+        # 尝试所有模式
         for i, (pattern, confidence_base) in enumerate(patterns):
             matches = re.findall(pattern, vlm_output, re.IGNORECASE | re.MULTILINE)
             if matches:
@@ -665,15 +665,15 @@ class ChartQAReasoner:
                     try:
                         num = int(match)
                         
-                        # Filter out years (1900-2099) unless question is explicitly about years
+                        # 过滤掉年份（1900-2099）除非问题明确是关于年份
                         if 1900 <= num <= 2099 and 'year' not in question.lower():
                             if self.debug:
                                 print(f"[DEBUG] Filtered out year: {num}")
                             continue
                         
-                        # For "how many" questions, numbers greater than 100 are less likely
+                        # 对于 "how many" 问题，大于100的数字可能性较低
                         if num > 100 and 'how many' in question.lower():
-                            confidence = confidence_base * 0.5  # Lower confidence
+                            confidence = confidence_base * 0.5  # 降低置信度
                         else:
                             confidence = confidence_base
                         
@@ -687,12 +687,12 @@ class ChartQAReasoner:
                     except ValueError:
                         continue
         
-        # Select best candidate based on confidence and reasonableness
+        # 根据置信度和合理性选择最佳候选
         if candidates:
-            # Prioritize smaller numbers (more reasonable for counting questions)
+            # 优先选择小数字（对于计数问题更合理）
             candidates.sort(key=lambda x: (
-                -x['confidence'],  # Higher confidence first
-                x['value'] if x['value'] < 50 else 1000 + x['value']  # Numbers below 50 first
+                -x['confidence'],  # 置信度高的优先
+                x['value'] if x['value'] < 50 else 1000 + x['value']  # 小于50的数字优先
             ))
             
             best_candidate = candidates[0]
@@ -707,7 +707,7 @@ class ChartQAReasoner:
                 'calculator_used': False
             }
         
-        # If no clear count found, return unstructured result
+        # 如果没有找到明确的计数，返回未结构化的结果
         if self.debug:
             print(f"[DEBUG] Could not extract count, returning original output")
         

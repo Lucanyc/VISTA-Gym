@@ -1,7 +1,8 @@
+
 # vlm_gym/environments/registration.py
 """
-VLM Gym Environment Registration System
-Supports registration and management of various vision-language tasks
+VLM Gym 环境注册系统
+支持多种视觉-语言任务的注册和管理
 """
 from __future__ import annotations
 from typing import Dict, Any, Callable, Type, Optional, Union, List
@@ -13,12 +14,12 @@ import os
 import importlib
 import json
 
-# Import task base classes
+# 导入任务基类
 from vlm_gym.environments.task.base import BaseTask, BaseAdapter
 
 logger = logging.getLogger(__name__)
 
-# Global registries
+# 全局注册表
 _ENV_REGISTRY: Dict[str, 'EnvSpec'] = {}
 _TASK_REGISTRY: Dict[str, Type[BaseTask]] = {}
 _ADAPTER_REGISTRY: Dict[str, Type[BaseAdapter]] = {}
@@ -26,19 +27,19 @@ _ADAPTER_REGISTRY: Dict[str, Type[BaseAdapter]] = {}
 
 @dataclass
 class TaskConfig:
-    """Task configuration"""
+    """任务配置"""
     task_type: str
     adapter_type: str
     adapter_config: Dict[str, Any] = field(default_factory=dict)
     task_kwargs: Dict[str, Any] = field(default_factory=dict)
     
     def __post_init__(self):
-        """Process environment variables in configuration"""
+        """处理配置中的环境变量"""
         self.adapter_config = self._expand_env_vars(self.adapter_config)
         self.task_kwargs = self._expand_env_vars(self.task_kwargs)
     
     def _expand_env_vars(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Recursively expand environment variables in configuration"""
+        """递归展开配置中的环境变量"""
         result = {}
         for key, value in config.items():
             if isinstance(value, str):
@@ -52,7 +53,7 @@ class TaskConfig:
 
 @dataclass
 class EnvConfig:
-    """Environment configuration"""
+    """环境配置"""
     env_id: str
     env_class: str = "VisionQAEnv"
     dataset_path: str = "${WORKSPACE:-/workspace}/data" 
@@ -63,14 +64,14 @@ class EnvConfig:
     action_space_config: Dict[str, Any] = field(default_factory=dict)
     
     def __post_init__(self):
-        """Replace environment variables"""
+        """替换环境变量"""
         self.dataset_path = os.path.expandvars(self.dataset_path)
-        # Process other configurations that may contain paths
+        # 处理其他可能包含路径的配置
         for key in ['reward_config', 'observation_space_config', 'action_space_config']:
             setattr(self, key, self._expand_env_vars(getattr(self, key)))
     
     def _expand_env_vars(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Recursively expand environment variables in configuration"""
+        """递归展开配置中的环境变量"""
         result = {}
         for key, value in config.items():
             if isinstance(value, str):
@@ -84,7 +85,7 @@ class EnvConfig:
 
 @dataclass
 class EnvSpec:
-    """Environment specification"""
+    """环境规范"""
     env_id: str
     env_class: Type
     task_config: TaskConfig
@@ -92,37 +93,37 @@ class EnvSpec:
     version: str = "v1"
     description: str = ""
     tags: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)  # Additional metadata
+    metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据
 
 
 def _get_env_class(env_class: Union[str, Type]) -> Type:
-    """Get environment class, supports dynamic import"""
+    """获取环境类，支持动态导入"""
     if not isinstance(env_class, str):
         return env_class
     
-    # Predefined environment class mapping
+    # 预定义的环境类映射
     env_class_map = {
         "VisionQAEnv": "vlm_gym.environments.vision_qa_env.VisionQAEnv",
         "MultiModalEnv": "vlm_gym.environments.multimodal_env.MultiModalEnv",
         "InteractiveVLMEnv": "vlm_gym.environments.interactive_vlm_env.InteractiveVLMEnv",
         "VLMContainerEnv": "vlm_gym.environments.env.VLMContainerEnv",
-        # More environment class mappings can be added here
+        # 这里可以留着添加更多环境类的映射
     }
     
-    # First try to get from the mapping
+    # 首先尝试从映射中获取
     if env_class in env_class_map:
         module_path = env_class_map[env_class]
     else:
-        # If not in the mapping, use the fully qualified class name directly
+        # 如果不在映射中，则直接使用传入完整的类名
         module_path = env_class
     
     try:
-        # Dynamic import
+        # 动态导入
         module_name, class_name = module_path.rsplit(".", 1)
         module = importlib.import_module(module_name)
         return getattr(module, class_name)
     except (ImportError, AttributeError) as e:
-        # If dynamic import fails, try importing from the current module
+        # 如果动态导入失败，尝试从当前模块导入
         if env_class == "VisionQAEnv":
             try:
                 from .vision_qa_env import VisionQAEnv
@@ -148,27 +149,27 @@ def register_env(
     force: bool = False,
 ) -> None:
     """
-    Register a VLM environment
+    注册VLM环境
     
     Args:
-        env_id: Environment ID, e.g. "chartqa", "scienceqa", "vizwiz"
-        env_class: Environment class or class name
-        task_type: Task type, e.g. "vision_qa_task", "vqa_task"
-        adapter_type: Adapter type, e.g. "chartqa_adapter"
-        adapter_config: Adapter configuration
-        env_config: Environment configuration
-        task_kwargs: Additional task parameters
-        version: Version number
-        description: Environment description
-        tags: Tag list, e.g. ["vision", "qa", "chart"]
-        metadata: Additional metadata
-        make_kwargs: Extra arguments for gym.register
-        force: Whether to forcefully overwrite an existing registration
+        env_id: 环境ID，如 "chartqa", "scienceqa", "vizwiz"
+        env_class: 环境类或类名
+        task_type: 任务类型，如 "vision_qa_task", "vqa_task"
+        adapter_type: 适配器类型，如 "chartqa_adapter"
+        adapter_config: 适配器配置
+        env_config: 环境配置
+        task_kwargs: 任务额外参数
+        version: 版本号
+        description: 环境描述
+        tags: 标签列表，如 ["vision", "qa", "chart"]
+        metadata: 额外的元数据
+        make_kwargs: gym.register的额外参数
+        force: 是否强制覆盖已存在的注册
     """
-    # Get environment class
+    # 获取环境类
     env_class = _get_env_class(env_class)
     
-    # Create configuration
+    # 创建配置
     task_config = TaskConfig(
         task_type=task_type,
         adapter_type=adapter_type,
@@ -182,7 +183,7 @@ def register_env(
         **(env_config or {})
     )
     
-    # Create environment specification
+    # 创建环境规范
     spec = EnvSpec(
         env_id=env_id,
         env_class=env_class,
@@ -194,20 +195,20 @@ def register_env(
         metadata=metadata or {}
     )
     
-    # Check if already exists
+    # 检查是否已存在
     full_id = f"{env_id}-{version}"
     if full_id in _ENV_REGISTRY and not force:
         raise ValueError(f"Environment {full_id} already registered. Use force=True to overwrite.")
     
-    # Register in the internal registry
+    # 注册到内部注册表
     _ENV_REGISTRY[full_id] = spec
-    _ENV_REGISTRY[env_id] = spec  # Also register without version for convenient lookup
+    _ENV_REGISTRY[env_id] = spec  # 也注册不带版本的ID，方便查询
     
-    # Create environment factory function
+    # 创建 environment factory 函数
     def _make_env(**kwargs):
         return _create_env_from_spec(spec, **kwargs)
     
-    # Register with Gymnasium
+    # 注册到Gymnasium
     gym_id = f"vlm-gym/{full_id}"
     if gym_id in gym.registry:
         if force:
@@ -227,18 +228,18 @@ def register_env(
 
 def update_env(env_id: str, **kwargs) -> None:
     """
-    Update a registered environment's configuration
+    更新已注册的环境配置
     
     Args:
-        env_id: Environment ID
-        **kwargs: Configuration items to update
+        env_id: 环境ID
+        **kwargs: 要更新的配置项
     """
     if env_id not in _ENV_REGISTRY:
         raise ValueError(f"Environment not registered: {env_id}")
     
     spec = _ENV_REGISTRY[env_id]
     
-    # Update configuration
+    # 更新配置
     for key, value in kwargs.items():
         if key == 'env_config':
             for k, v in value.items():
@@ -258,10 +259,10 @@ def update_env(env_id: str, **kwargs) -> None:
 
 def unregister_env(env_id: str) -> None:
     """
-    Unregister an environment
+    注销环境
     
     Args:
-        env_id: Environment ID
+        env_id: 环境ID
     """
     if env_id not in _ENV_REGISTRY:
         raise ValueError(f"Environment not registered: {env_id}")
@@ -269,13 +270,13 @@ def unregister_env(env_id: str) -> None:
     spec = _ENV_REGISTRY[env_id]
     full_id = f"{env_id}-{spec.version}"
     
-    # Remove from internal registry
+    # 从内部注册表删除
     if full_id in _ENV_REGISTRY:
         del _ENV_REGISTRY[full_id]
     if env_id in _ENV_REGISTRY:
         del _ENV_REGISTRY[env_id]
     
-    # Unregister from Gymnasium
+    # 从Gymnasium注销
     gym_id = f"vlm-gym/{full_id}"
     if gym_id in gym.registry:
         del gym.registry[gym_id]
@@ -285,13 +286,13 @@ def unregister_env(env_id: str) -> None:
 
 def register_task(task_name: str, task_class: Type[BaseTask]) -> None:
     """
-    Register a task class
+    注册任务类
     
     Args:
-        task_name: Task name
-        task_class: Task class (must inherit from BaseTask)
+        task_name: 任务名称
+        task_class: 任务类（必须继承自BaseTask）
     """
-    # Use local import to avoid circular dependencies
+    # 使用本地导入避免循环依赖
     from vlm_gym.environments.task.base import BaseTask
     
     if not issubclass(task_class, BaseTask):
@@ -303,13 +304,13 @@ def register_task(task_name: str, task_class: Type[BaseTask]) -> None:
 
 def register_adapter(adapter_name: str, adapter_class: Type[BaseAdapter]) -> None:
     """
-    Register an adapter class
+    注册适配器类
     
     Args:
-        adapter_name: Adapter name
-        adapter_class: Adapter class (must inherit from BaseAdapter)
+        adapter_name: 适配器名称
+        adapter_class: 适配器类（必须继承自BaseAdapter）
     """
-    # Use local import to avoid circular dependencies
+    # 使用本地导入避免循环依赖
     from vlm_gym.environments.task.base import BaseAdapter
     
     if not issubclass(adapter_class, BaseAdapter):
@@ -320,18 +321,18 @@ def register_adapter(adapter_name: str, adapter_class: Type[BaseAdapter]) -> Non
 
 
 def _create_env_from_spec(spec: EnvSpec, **kwargs) -> Any:
-    """Create an environment from a specification"""
-    # Get task class
+    """从规范创建环境"""
+    # 获取任务类
     task_class = _TASK_REGISTRY.get(spec.task_config.task_type)
     if not task_class:
         raise ValueError(f"Task type not registered: {spec.task_config.task_type}")
     
-    # Get adapter class
+    # 获取适配器类
     adapter_class = _ADAPTER_REGISTRY.get(spec.task_config.adapter_type)
     if not adapter_class:
         raise ValueError(f"Adapter type not registered: {spec.task_config.adapter_type}")
     
-    # Create adapter
+    # 创建适配器
     adapter_config = spec.task_config.adapter_config.copy()
     adapter_config.update(kwargs.get('adapter_config', {}))
     try:
@@ -339,9 +340,9 @@ def _create_env_from_spec(spec: EnvSpec, **kwargs) -> Any:
     except Exception as e:
         raise RuntimeError(f"Failed to create adapter {spec.task_config.adapter_type}: {e}") from e
     
-    # Create environment
+    # 创建环境
     env_config = asdict(spec.env_config)
-    env_config.pop('env_id', None)  # env_id does not need to be passed to the environment
+    env_config.pop('env_id', None) # env_id不需要传递给环境
     env_config.update(kwargs.get('env_config', {}))
     
     try:
@@ -349,7 +350,7 @@ def _create_env_from_spec(spec: EnvSpec, **kwargs) -> Any:
     except Exception as e:
         raise RuntimeError(f"Failed to create environment {spec.env_class.__name__}: {e}") from e
     
-    # Set task entry point
+    # 设置任务入口点
     task_kwargs = spec.task_config.task_kwargs.copy()
     task_kwargs.update(kwargs.get('task_kwargs', {}))
     
@@ -358,25 +359,25 @@ def _create_env_from_spec(spec: EnvSpec, **kwargs) -> Any:
         return task_class(task_id=task_id, adapter=adapter, **kw)
     
     env.task_entrypoint = task_entrypoint
-    env._adapter = adapter  # Save adapter reference
-    env._spec = spec  # Save spec reference
+    env._adapter = adapter  # 保存adapter引用
+    env._spec = spec  # 保存spec引用
     
     return env
 
 
 def make(env_id: str, **kwargs) -> Any:
     """
-    Create an environment (without relying on Gymnasium)
+    创建环境（不依赖Gymnasium）
     
     Args:
-        env_id: Environment ID
-        **kwargs: Parameters to override default configuration
-            - adapter_config: Adapter configuration overrides
-            - env_config: Environment configuration overrides
-            - task_kwargs: Task parameter overrides
+        env_id: 环境ID
+        **kwargs: 覆盖默认配置的参数
+            - adapter_config: 适配器配置覆盖
+            - env_config: 环境配置覆盖
+            - task_kwargs: 任务参数覆盖
             
     Returns:
-        The created environment instance
+        创建的环境实例
     """
     spec = _ENV_REGISTRY.get(env_id)
     if not spec:
@@ -388,20 +389,20 @@ def make(env_id: str, **kwargs) -> Any:
 
 def list_envs(tags: List[str] = None, include_versions: bool = False) -> List[Dict[str, Any]]:
     """
-    List all registered environments
+    列出所有注册的环境
     
     Args:
-        tags: Filter tags
-        include_versions: Whether to include version information
+        tags: 过滤标签
+        include_versions: 是否包含版本信息
         
     Returns:
-        List of environment information
+        环境信息列表
     """
     envs = []
     seen = set()
     
     for env_id, spec in _ENV_REGISTRY.items():
-        # Decide display logic based on whether versions are included
+        # 根据是否包含版本决定显示逻辑
         if not include_versions and '-' not in env_id:
             continue
         if include_versions and '-' in env_id:
@@ -429,14 +430,14 @@ def list_envs(tags: List[str] = None, include_versions: bool = False) -> List[Di
 
 
 def get_env_spec(env_id: str) -> EnvSpec:
-    """Get environment specification"""
+    """获取环境规范"""
     if env_id not in _ENV_REGISTRY:
         raise ValueError(f"Environment not registered: {env_id}")
     return _ENV_REGISTRY[env_id]
 
 
 def export_registry(filepath: str) -> None:
-    """Export the registry to a file"""
+    """导出注册表到文件"""
     data = {
         'environments': {},
         'tasks': list(_TASK_REGISTRY.keys()),
@@ -444,7 +445,7 @@ def export_registry(filepath: str) -> None:
     }
     
     for env_id, spec in _ENV_REGISTRY.items():
-        if '-' in env_id:  # Only export full IDs with version
+        if '-' in env_id:  # 只导出带版本的完整ID
             data['environments'][env_id] = {
                 'env_class': spec.env_class.__name__,
                 'task_type': spec.task_config.task_type,
@@ -460,10 +461,10 @@ def export_registry(filepath: str) -> None:
     logger.info(f"Exported registry to {filepath}")
 
 
-# ===== Register concrete implementations =====
+# ===== 注册具体实现 =====
 
 def register_builtin_adapters():
-    """Register built-in adapters"""
+    """注册内置适配器"""
 
     # try:
     #     from vlm_gym.data_adapters.chartqa_adapter import ChartQAAdapter
@@ -471,22 +472,38 @@ def register_builtin_adapters():
     # except ImportError as e:
     #     logger.warning(f"ChartQAAdapter not found: {e}")
     
-    # Temporarily empty, since you are using an external chartqa_adapter.py
+    # 暂时为空，因为您使用的是外部的 chartqa_adapter.py
+    
+    try:
+        from data_adapters.olympiadbench_adapter import OlympiadBenchAdapter
+        register_adapter("olympiadbench_adapter", OlympiadBenchAdapter)
+        logger.info("Registered OlympiadBenchAdapter")
+    except ImportError as e:
+        logger.warning(f"OlympiadBenchAdapter not found: {e}")
+    
     pass
 
 
 def register_builtin_tasks():
-    """Register built-in tasks"""
-    # Only register tasks that actually exist
+    """注册内置任务"""
+    # 只注册实际存在的任务
     try:
         from vlm_gym.environments.task.vision_qa_task import VisionQATask
         register_task("vision_qa_task", VisionQATask)
-        register_task("vqa_task", VisionQATask)  # Alias
+        register_task("vqa_task", VisionQATask)  # 别名
         logger.info("Registered VisionQATask")
     except ImportError as e:
         logger.warning(f"VisionQATask not found: {e}")
+        
     
-    # If you have other task classes, add them here
+    try:
+        from vlm_gym.environments.task.olympiadbench import OlympiadBenchTask
+        register_task("olympiadbench_task", OlympiadBenchTask)
+        logger.info("Registered OlympiadBenchTask")
+    except ImportError as e:
+        logger.warning(f"OlympiadBenchTask not found: {e}")
+    
+    # 如果您有其他任务类，在这里添加
     # try:
     #     from vlm_gym.environments.task.chart_qa_task import ChartQATask
     #     register_task("chart_qa_task", ChartQATask)
@@ -495,11 +512,11 @@ def register_builtin_tasks():
 
 
 def register_builtin_envs():
-    """Register built-in environments"""
-    # Temporarily commented out since there are no corresponding adapters and tasks
-    # You can modify this according to your actual setup
+    """注册内置环境"""
+    # 暂时注释掉，因为没有对应的 adapter 和 task
+    # 您可以根据实际情况修改
     
-    # # Use environment variables to set default paths
+    # # 使用环境变量设置默认路径
     # default_data_root = os.environ.get('VLM_DATA_ROOT', '/workspace/data')
     
     #
@@ -507,8 +524,8 @@ def register_builtin_envs():
     # register_env(
     #     env_id="chartqa",
     #     env_class="VisionQAEnv",
-    #     task_type="vision_qa_task",  # Use an actually existing task
-    #     adapter_type="chartqa_adapter",  # Use an actually existing adapter
+    #     task_type="vision_qa_task",  # 使用实际存在的任务
+    #     adapter_type="chartqa_adapter",  # 使用实际存在的适配器
     #     adapter_config={
     #         "data_root": default_data_root,
     #     },
@@ -521,15 +538,46 @@ def register_builtin_envs():
     #     metadata={"difficulty": "medium", "dataset_size": "10k"}
     # )
     
+    default_data_root = os.environ.get('VLM_DATA_ROOT', '/workspace/data')
+    
+    # OlympiadBench
+    register_env(
+        env_id="olympiadbench",
+        env_class="VisionQAEnv",
+        task_type="olympiadbench_task",
+        adapter_type="olympiadbench_adapter",
+        adapter_config={
+            "data_root": "/data/wang/meng/GYM-Work/vlm_gym-tool-usage-mathvista/data/olympiadbench/OlympiadBench_Dataset",
+            "annotation_files": "/data/wang/meng/GYM-Work/vlm_gym-tool-usage-mathvista/data/olympiadbench/OlympiadBench_Dataset/combined_dataset/olympiadbench_format.json",
+            "validate_images": True
+        },
+        env_config={
+            "dataset_path": "/data/wang/meng/GYM-Work/vlm_gym-tool-usage-mathvista/data/olympiadbench/OlympiadBench_Dataset",
+            "max_steps": 5,  # 给更多步数处理复杂问题
+            "enable_grounding_dino": True,
+            "enable_chartmoe": True,
+            "enable_diagram_formalizer": True,
+            "enable_deepeyes_tools": True
+        },
+        description="Olympic-level mathematics competition problems",
+        tags=["vision", "qa", "math", "olympiad", "geometry", "algebra", "physics"],
+        metadata={
+            "difficulty": "very_high", 
+            "dataset_size": "8900+",
+            "answer_types": ["numeric", "expression", "equation", "interval", "tuple"]
+        }
+    )
+    
+    
     pass
 
 
 def init_registry(skip_builtin: bool = False):
     """
-    Initialize the registry
+    初始化注册表
     
     Args:
-        skip_builtin: Whether to skip registration of built-in components
+        skip_builtin: 是否跳过内置组件的注册
     """
     if not skip_builtin:
         register_builtin_adapters()
@@ -540,19 +588,19 @@ def init_registry(skip_builtin: bool = False):
         logger.info("Registry initialized without builtin components")
 
 
-# Convenience function
+# 便捷函数
 def quick_make(env_id: str, data_root: str = None, max_steps: int = None, **kwargs) -> Any:
     """
-    Convenience function for quickly creating an environment
+    快速创建环境的便捷函数
     
     Args:
-        env_id: Environment ID
-        data_root: Data root directory
-        max_steps: Maximum number of steps
-        **kwargs: Other parameters
+        env_id: 环境ID
+        data_root: 数据根目录
+        max_steps: 最大步数
+        **kwargs: 其他参数
         
     Returns:
-        Environment instance
+        环境实例
     """
     config_overrides = {}
     
@@ -571,10 +619,10 @@ def quick_make(env_id: str, data_root: str = None, max_steps: int = None, **kwar
 
 
 if __name__ == "__main__":
-    # Initialize
+    # 初始化
     init_registry()
     
-    # List all environments
+    # 列出所有环境
     print("Available environments:")
     envs = list_envs()
     if envs:
@@ -585,7 +633,7 @@ if __name__ == "__main__":
     else:
         print("  No environments registered yet.")
     
-    # If there are registered environments, you can test creation
+    # 如果有注册的环境，可以测试创建
     # if envs:
     #     env_id = envs[0]['id']
     #     print(f"\nTesting environment creation for: {env_id}")

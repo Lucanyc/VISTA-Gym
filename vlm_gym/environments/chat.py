@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 
 class MultiModalChat:
-    """Multimodal chat manager"""
+    """支持多模态的聊天管理器"""
     
     def __init__(self):
         self.messages: List[Dict[str, Any]] = []
@@ -14,12 +14,12 @@ class MultiModalChat:
         role: Literal["user", "assistant", "system"],
         content: Union[str, Dict[str, Any]]
     ):
-        """Add a message
+        """添加消息
         
         Args:
-            role: Message role
-            content: Message content, can be a string or a dict with multimodal content
-                    e.g. {"text": "...", "image": PIL.Image}
+            role: 消息角色
+            content: 消息内容，可以是字符串或包含多模态内容的字典
+                    如 {"text": "...", "image": PIL.Image}
         """
         message = {
             "role": role,
@@ -27,7 +27,7 @@ class MultiModalChat:
             "timestamp": time.time()
         }
         
-        # Normalize content format
+        # 标准化内容格式
         if isinstance(content, str):
             message["content"] = {"text": content}
             
@@ -36,11 +36,11 @@ class MultiModalChat:
     def get_history(self, 
                     include_images: bool = True,
                     max_messages: int = None) -> List[Dict[str, Any]]:
-        """Get chat history
+        """获取聊天历史
         
         Args:
-            include_images: Whether to include images
-            max_messages: Maximum number of messages
+            include_images: 是否包含图像
+            max_messages: 最大消息数量
         """
         messages = self.messages.copy()
         
@@ -48,7 +48,7 @@ class MultiModalChat:
             messages = messages[-max_messages:]
             
         if not include_images:
-            # Remove image content
+            # 移除图像内容
             processed_messages = []
             for msg in messages:
                 new_msg = msg.copy()
@@ -63,13 +63,13 @@ class MultiModalChat:
         return messages
     
     def get_last_message(self) -> Dict[str, Any]:
-        """Get the last message"""
+        """获取最后一条消息"""
         return self.messages[-1] if self.messages else None
     
     def clear(self):
-        """Clear chat history"""
+        """清空聊天历史"""
         self.messages = []
         
     def close(self):
-        """Close the chat"""
+        """关闭聊天"""
         self.clear()

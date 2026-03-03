@@ -23,7 +23,7 @@ class Unicode(Space):
     def __repr__(self) -> str:
         return f"Unicode(max_length={self.max_length})"
 
-
+# 使用 Box 空间来表示图像，而不是自定义 ImageSpace
 class ImageSpace(Box):
     """图像空间，继承自Box"""
     
@@ -32,7 +32,7 @@ class ImageSpace(Box):
         shape: Optional[Tuple[int, int, int]] = (224, 224, 3),
         dtype: np.dtype = np.uint8
     ):
-
+        # 如果没有指定shape，使用默认值
         if shape is None:
             shape = (224, 224, 3)
         

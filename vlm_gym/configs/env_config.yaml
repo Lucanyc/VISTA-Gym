@@ -1,0 +1,219 @@
+# 基础环境配置（所有实验共享的默认配置）
+environment:
+  # 数据集路径
+  dataset_path: "data/chartqa"
+  
+  # 基本参数
+  max_steps: 10
+  time_limit: null  # null表示无时间限制，或设置为秒数
+  
+  # 动作系统
+  enable_actions: true
+  custom_actions: null
+  
+  # 新 DeepEyes 工具配置（移除了 deepeyes_version）
+  enable_deepeyes_tools: false
+  deepeyes_config: {}  # 新增：DeepEyes 配置（可为空字典）
+
+
+  #EasyOCR工具配置
+  enable_easyocr: false  # 默认关闭
+  easyocr_config:
+    languages: ["en", "zh"]  # 支持的语言列表
+    gpu: true  # 是否使用GPU加速
+    confidence_threshold: 0.5  # OCR置信度阈值
+
+
+  # Grounding DINO工具配置
+  enable_grounding_dino: false  # 默认关闭
+  grounding_dino_config:
+    model_path: "/data/wang/meng/GYM-Work/vlm_gym-tool-usage-mathvista/GroundingDINO/groundingdino_swint_ogc.pth"
+    model_config: "/data/wang/meng/GYM-Work/vlm_gym-tool-usage-mathvista/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+    device: "cuda"
+    box_threshold: 0.35
+    text_threshold: 0.25
+    nms_threshold: 0.8
+
+  # ChartMoE工具配置
+  enable_chartmoe: false  # 默认关闭
+  chartmoe_config:
+    model_path: "/workspace/mathvista/model"  # 使用本地路径
+    device: "cuda"
+    trust_remote_code: true
+    max_new_tokens: 512
+    
+  # DiagramFormalizer 工具配置
+  enable_diagram_formalizer: false  # 默认关闭
+  diagram_formalizer_config: {}
+    
+# 实验特定配置
+experiments:
+  # 实验1：仅使用Grounding DINO
+  grounding_dino_only:
+    enable_deepeyes_tools: false
+    enable_grounding_dino: true
+    enable_chartmoe: false
+    enable_diagram_formalizer: false
+    max_steps: 15
+    
+  # 实验2：仅使用新 DeepEyes
+  deepeyes_only:
+    enable_deepeyes_tools: true
+    enable_grounding_dino: false
+    enable_chartmoe: false
+    enable_diagram_formalizer: false
+    max_steps: 20
+    
+  # 实验3：同时使用所有工具
+  all_tools:
+    enable_deepeyes_tools: true
+    enable_grounding_dino: true
+    enable_chartmoe: true
+    enable_diagram_formalizer: true
+    max_steps: 25
+    time_limit: 300
+    
+  # 实验4：基础环境（无工具）
+  baseline:
+    enable_deepeyes_tools: false
+    enable_grounding_dino: false
+    enable_chartmoe: false
+    enable_diagram_formalizer: false
+    enable_actions: true
+    max_steps: 10
+    
+  # 实验5：快速测试配置
+  debug:
+    enable_grounding_dino: true
+    enable_chartmoe: false
+    enable_deepeyes_tools: false
+    enable_diagram_formalizer: false
+    max_steps: 5
+    grounding_dino_config:
+      device: "cuda"
+      box_threshold: 0.3
+      
+  # 实验6：ChartQA专用配置
+  chartqa_grounding:
+    enable_grounding_dino: true
+    enable_chartmoe: false
+    enable_deepeyes_tools: false
+    enable_diagram_formalizer: false
+    max_steps: 15
+    grounding_dino_config:
+      device: "cuda"
+      box_threshold: 0.25
+      text_threshold: 0.2
+      
+  # 实验7：仅使用ChartMoE
+  chartqa_chartmoe:
+    enable_deepeyes_tools: false
+    enable_grounding_dino: false
+    enable_chartmoe: true
+    enable_diagram_formalizer: false
+    max_steps: 15
+    chartmoe_config:
+      device: "cuda"
+      model_path: "/workspace/model"
+      trust_remote_code: true
+      max_new_tokens: 512
+      
+  # 实验8：ChartMoE + 反射机制
+  chartqa_chartmoe_reflection:
+    enable_deepeyes_tools: false
+    enable_grounding_dino: false
+    enable_chartmoe: true
+    enable_diagram_formalizer: false
+    max_steps: 20
+    chartmoe_config:
+      device: "cuda"
+      model_path: "/workspace/model"
+      trust_remote_code: true
+      max_new_tokens: 512
+      
+  # 实验9：ChartQA with all tools
+  chartqa_all_tools:
+    enable_deepeyes_tools: true
+    enable_grounding_dino: true
+    enable_chartmoe: true
+    enable_diagram_formalizer: true
+    max_steps: 25
+    grounding_dino_config:
+      device: "cpu"
+      box_threshold: 0.25
+      text_threshold: 0.2
+    chartmoe_config:
+      device: "cuda"
+      model_path: "/workspace/model"
+      max_new_tokens: 512
+      
+  # 实验10：ChartMoE vs Grounding DINO
+  chartqa_compare_tools:
+    enable_deepeyes_tools: false
+    enable_grounding_dino: true
+    enable_chartmoe: true
+    enable_diagram_formalizer: false
+    max_steps: 20
+    grounding_dino_config:
+      device: "cuda"
+      box_threshold: 0.25
+    chartmoe_config:
+      device: "cuda"
+      model_path: "/workspace/model"
+      
+  # 实验11：ChartMoE快速调试
+  chartqa_chartmoe_debug:
+    enable_deepeyes_tools: false
+    enable_grounding_dino: false
+    enable_chartmoe: true
+    enable_diagram_formalizer: false
+    max_steps: 5
+    chartmoe_config:
+      device: "cpu"
+      model_path: "/workspace/model"
+      trust_remote_code: true
+      max_new_tokens: 256
+      
+  # 实验12：新 DeepEyes 测试
+  new_deepeyes_test:
+    enable_deepeyes_tools: true
+    enable_grounding_dino: false
+    enable_chartmoe: false
+    enable_diagram_formalizer: false
+    max_steps: 15
+    deepeyes_config: {}  # 使用默认配置
+
+  
+  # 实验13：仅使用 EasyOCR
+  easyocr_only:
+    enable_deepeyes_tools: false
+    enable_grounding_dino: false
+    enable_chartmoe: false
+    enable_diagram_formalizer: false
+    enable_easyocr: true
+    max_steps: 15
+    easyocr_config:
+      languages: ['en']
+      gpu: true
+      confidence_threshold: 0.5
+
+  #实验14：EasyOCR + Grounding DINO
+  easyocr_grounding_dino:
+    enable_deepeyes_tools: false
+    enable_grounding_dino: true
+    enable_chartmoe: false
+    enable_diagram_formalizer: false
+    enable_easyocr: true
+    max_steps: 20
+    easyocr_config:
+      languages: ['en', 'zh']
+      gpu: true
+      confidence_threshold: 0.5
+    grounding_dino_config:
+      device: "cuda"
+      box_threshold: 0.3
+      text_threshold: 0.2
+      
+# 任务相关配置
+task:
+  kwargs: {}

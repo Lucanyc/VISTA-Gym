@@ -1,6 +1,6 @@
 # vlm_gym/environments/action/parser.py
 """
-This module parses action strings
+这里是解析action动作的
 """
 import ast
 import re
@@ -8,27 +8,27 @@ import json
 from typing import Dict, Any, Tuple, Optional
 
 class ActionParser:
-    """Action parser"""
+    """动作解析器"""
     
     def parse(self, action_str: str) -> Tuple[str, Dict[str, Any]]:
         """
-        Parse an action string
+        解析动作字符串
         
-        Supported formats:
-        - action_name(param1=value1, param2=value2)    # original format
-        - action_name(value1, value2)                  # original format
-        - action_name()                                # original format
-        - <tool_call>...</tool_call>                   # DeepEyes format
-        - <answer>...</answer>                         # DeepEyes format
+        支持格式:
+        - action_name(param1=value1, param2=value2)  # 原有格式
+        - action_name(value1, value2)                # 原有格式
+        - action_name()                              # 原有格式
+        - <tool_call>...</tool_call>                 # DeepEyes格式
+        - <answer>...</answer>                       # DeepEyes格式
         """
         action_str = action_str.strip()
         
-        # First check whether it is the DeepEyes format
+        # 首先检查是否是DeepEyes格式
         deepeyes_result = self._parse_deepeyes_format(action_str)
         if deepeyes_result:
             return deepeyes_result
         
-        # If not DeepEyes format, parse using the normal function call syntax
+        # 如果不是DeepEyes格式，使用原有的函数调用解析
         match = re.match(r'^(\w+)\s*\((.*)\)$', action_str)
         if not match:
             raise ValueError(f"Invalid action format: {action_str}")
@@ -39,22 +39,22 @@ class ActionParser:
         if not params_str:
             return action_name, {}
         
-        # Parse parameters
+        # 解析参数
         params = self._parse_params(params_str, action_name)
         return action_name, params
     
     def _parse_deepeyes_format(self, action_str: str) -> Optional[Tuple[str, Dict[str, Any]]]:
         """
-        Parse a DeepEyes-format action
-        Returns (action_type, params) or None
+        解析DeepEyes格式的action
+        返回 (action_type, params) 或 None
         """
-        # Extract think content (optional)
+        # 提取think内容（可选）
         think_content = ""
         think_match = re.search(r'<think>(.*?)</think>', action_str, re.DOTALL)
         if think_match:
             think_content = think_match.group(1).strip()
         
-        # Check whether it is a tool call
+        # 检查是否是工具调用
         tool_call_match = re.search(r'<tool_call>\s*(.*?)\s*</tool_call>', action_str, re.DOTALL)
         if tool_call_match:
             tool_json_str = tool_call_match.group(1).strip()
@@ -67,7 +67,7 @@ class ActionParser:
                     "raw_action": action_str
                 }
             except json.JSONDecodeError as e:
-                # If JSON parsing fails, return error information
+                # 如果JSON解析失败，返回错误信息
                 return "deepeyes_tool_call_error", {
                     "error": f"Invalid JSON in tool_call: {str(e)}",
                     "raw_json": tool_json_str,
@@ -75,7 +75,7 @@ class ActionParser:
                     "raw_action": action_str
                 }
         
-        # Check whether it is an answer
+        # 检查是否是答案
         answer_match = re.search(r'<answer>(.*?)</answer>', action_str, re.DOTALL)
         if answer_match:
             answer_content = answer_match.group(1).strip()
@@ -85,32 +85,32 @@ class ActionParser:
                 "raw_action": action_str
             }
         
-        # If only think content exists but without other tags, treat it as intermediate thought
+        # 如果包含think但没有其他标签，可能是中间思考步骤
         if think_content:
             return "deepeyes_think_only", {
                 "think_content": think_content,
                 "raw_action": action_str
             }
         
-        # Not DeepEyes format
+        # 不是DeepEyes格式
         return None
     
     def parse_deepeyes_action(self, action_str: str) -> Tuple[str, Any]:
         """
-        Convenience method for parsing DeepEyes-format actions
-        Returns (action_type, content)
+        专门用于解析DeepEyes格式的便捷方法
+        返回 (action_type, content)
         
-        possible action_type values:
-        - "tool_call": tool invocation
-        - "answer": final answer
-        - "think": only thinking content
-        - "text": normal text
-        - "error": parsing error
+        action_type可能的值:
+        - "tool_call": 工具调用
+        - "answer": 最终答案
+        - "think": 仅思考
+        - "text": 普通文本
+        - "error": 解析错误
         """
         result = self._parse_deepeyes_format(action_str)
         
         if not result:
-            # Not DeepEyes format → treat as normal text
+            # 不是DeepEyes格式，作为普通文本
             return "text", action_str
         
         action_type, params = result
@@ -126,11 +126,11 @@ class ActionParser:
         else:
             return "text", action_str
     
-    # Below are original methods, unchanged
+    # 以下是原有的方法，保持不变
     def _parse_params(self, params_str: str, action_name: str) -> Dict[str, Any]:
-        """Parse parameters"""
+        """解析参数"""
         try:
-            # Use AST for safe parsing
+            # 使用AST安全解析
             code = f"{action_name}({params_str})"
             tree = ast.parse(code, mode='eval')
             
@@ -140,12 +140,12 @@ class ActionParser:
             call_node = tree.body
             params = {}
             
-            # Positional arguments
+            # 处理位置参数
             for i, arg in enumerate(call_node.args):
                 value = self._eval_node(arg)
                 params[f"arg{i}"] = value
             
-            # Keyword arguments
+            # 处理关键字参数
             for keyword in call_node.keywords:
                 if keyword.arg is None:
                     raise ValueError("**kwargs not supported")
@@ -155,11 +155,11 @@ class ActionParser:
             return params
             
         except:
-            # Fallback to simple parsing
+            # 降级到简单解析
             return self._simple_parse(params_str)
     
     def _eval_node(self, node: ast.AST) -> Any:
-        """Safely evaluate AST node"""
+        """安全评估AST节点"""
         if isinstance(node, (ast.Constant, ast.Num, ast.Str)):
             return node.n if hasattr(node, 'n') else (node.s if hasattr(node, 's') else node.value)
         elif isinstance(node, ast.List):
@@ -179,10 +179,10 @@ class ActionParser:
             raise ValueError(f"Unsupported node type: {type(node)}")
     
     def _simple_parse(self, params_str: str) -> Dict[str, Any]:
-        """Simple backup parameter parser"""
+        """简单参数解析备份"""
         params = {}
         
-        # Try key=value parsing
+        # 尝试key=value格式
         pattern = r'(\w+)\s*=\s*([^,]+?)(?=\s*,\s*\w+\s*=|$)'
         matches = re.finditer(pattern, params_str)
         
@@ -194,40 +194,40 @@ class ActionParser:
         return params
     
     def _parse_value(self, value_str: str) -> Any:
-        """Parse parameter value"""
+        """解析值"""
         value_str = value_str.strip()
         
-        # String
+        # 字符串
         if (value_str.startswith('"') and value_str.endswith('"')) or \
            (value_str.startswith("'") and value_str.endswith("'")):
             return value_str[1:-1]
         
-        # Number
+        # 数字
         try:
             return float(value_str) if '.' in value_str else int(value_str)
         except ValueError:
             pass
         
-        # Boolean / None
+        # 布尔值/None
         if value_str.lower() in ('true', 'false', 'none'):
             return eval(value_str.capitalize())
         
-        # List
+        # 列表
         if value_str.startswith('[') and value_str.endswith(']'):
             try:
                 return ast.literal_eval(value_str)
             except:
                 pass
         
-        # Default fallback: string
+        # 默认字符串
         return value_str
 
 
-# Convenience function for direct import and usage
+# 便捷函数，可以直接导入使用
 def parse_deepeyes_action(action_string: str) -> Tuple[str, Any]:
     """
-    Parse a DeepEyes-format action
-    Returns (action_type, content)
+    解析DeepEyes格式的action
+    返回 (action_type, content)
     """
     parser = ActionParser()
     return parser.parse_deepeyes_action(action_string)

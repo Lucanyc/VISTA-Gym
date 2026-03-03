@@ -1,3 +1,5 @@
+
+
 #!/usr/bin/env python3
 """Utility functions for VLM agents"""
 
@@ -206,20 +208,28 @@ def clean_response(text: str, max_length: int = 200) -> str:
     return text
 
 
-def format_prompt_with_choices(question: str, choices: List[str]) -> str:
+def format_prompt_with_choices(question: str, choices: List[str], language: str = None) -> str:
     """Format a multiple choice question prompt
     
     Args:
         question: The question text
         choices: List of answer choices
+        language: Language for prompts (auto-detect if None)
         
     Returns:
         Formatted prompt
     """
+    # Auto-detect language if not specified
+    if language is None:
+        # Simple heuristic: if question contains Chinese characters
+        import re
+        chinese_chars = re.findall(r'[\u4e00-\u9fff]', question)
+        language = 'zh' if chinese_chars else 'en'
+    
     # Ensure question ends with proper punctuation
     question = question.strip()
-    if not question.endswith(('?', '.', '!')):
-        question += '?'
+    if not question.endswith(('?', '.', '!', '？', '。', '！', ')', '）')):
+        question += '？' if language == 'zh' else '?'
     
     # Format choices
     formatted_choices = "\n".join([
@@ -227,8 +237,13 @@ def format_prompt_with_choices(question: str, choices: List[str]) -> str:
         for i, choice in enumerate(choices)
     ])
     
-    # Build prompt
-    prompt = f"""{question}
+    # Build prompt based on language
+    if language == 'zh':
+        # 中文版本 - 不要重复选项
+        prompt = f"{question}"  # 只返回问题，不添加额外的英文提示
+    else:
+        # 英文版本（保持原样）
+        prompt = f"""{question}
 
 Choose from the following options:
 {formatted_choices}
@@ -306,3 +321,186 @@ def validate_observation(observation: Dict[str, Any]) -> Tuple[bool, Optional[st
         return False, "Question cannot be empty"
     
     return True, None
+
+
+# ==================== Reflection Prompt Templates and Functions ====================
+# 以下是 reflection+multi-turn 相关功能
+
+# Basic reflection template
+REFLECTION_PROMPT_TEMPLATE = """
+Previous Attempt Analysis:
+- Your answer: {previous_answer}
+- Evaluation: Incorrect
+
+{feedback}
+
+Reflection Guidelines:
+1. Carefully re-examine the chart/image
+2. Consider what might have been missed in your previous attempt
+3. {specific_guidance}
+
+Attempt {attempt} of {max_attempts}
+{hint_section}
+
+Now, please provide your revised answer to the question:
+{question}
+"""
+
+# More detailed template for complex reasoning
+DETAILED_REFLECTION_TEMPLATE = """
+📊 Reflection on Previous Attempt
+
+Previous Response: {previous_answer}
+Status: ❌ Incorrect
+
+Feedback from System:
+{feedback}
+
+Key Points to Consider:
+• {point1}
+• {point2}
+• {point3}
+
+{hint_section}
+
+Current Progress: Attempt {attempt}/{max_attempts}
+{urgency_message}
+
+Please carefully analyze the image again and answer:
+{question}
+"""
+
+# Concise template for simple corrections
+CONCISE_REFLECTION_TEMPLATE = """
+Your answer "{previous_answer}" was incorrect.
+{feedback}
+{hint_section}
+Please try again (Attempt {attempt}/{max_attempts}): {question}
+"""
+
+
+def format_reflection_prompt(observation: Dict[str, Any], 
+                           template_style: str = "standard") -> str:
+    """
+    Format prompt for reflection attempts with various styles
+    
+    Args:
+        observation: Dictionary containing reflection context
+        template_style: One of "standard", "detailed", "concise"
+    
+    Returns:
+        Formatted reflection prompt
+    """
+    
+    # Extract observation data
+    previous_answer = observation.get('previous_answer', '')
+    feedback = observation.get('feedback', '')
+    hint = observation.get('hint', '')
+    attempt = observation.get('attempt', 2)
+    max_attempts = observation.get('max_attempts', 3)
+    question = observation.get('question', '')
+    attempts_remaining = observation.get('attempts_remaining', max_attempts - attempt + 1)
+    
+    # Determine specific guidance based on feedback
+    specific_guidance = _get_specific_guidance(feedback)
+    
+    # Build hint section
+    hint_section = f"\n💡 Helpful hint: {hint}" if hint else ""
+    
+    # Urgency message for last attempt
+    urgency_message = ""
+    if attempts_remaining == 1:
+        urgency_message = "⚠️ This is your FINAL attempt. Please be extra careful!"
+    elif attempts_remaining == 2:
+        urgency_message = "You have one more attempt after this if needed."
+    
+    # Select template based on style
+    if template_style == "detailed":
+        points = _extract_key_points(feedback, observation)
+        return DETAILED_REFLECTION_TEMPLATE.format(
+            previous_answer=previous_answer,
+            feedback=feedback,
+            point1=points[0],
+            point2=points[1],
+            point3=points[2],
+            hint_section=hint_section,
+            attempt=attempt,
+            max_attempts=max_attempts,
+            urgency_message=urgency_message,
+            question=question
+        )
+    elif template_style == "concise":
+        return CONCISE_REFLECTION_TEMPLATE.format(
+            previous_answer=previous_answer,
+            feedback=feedback,
+            hint_section=hint_section,
+            attempt=attempt,
+            max_attempts=max_attempts,
+            question=question
+        )
+    else:
+        # Standard template
+        return REFLECTION_PROMPT_TEMPLATE.format(
+            previous_answer=previous_answer,
+            feedback=feedback,
+            specific_guidance=specific_guidance,
+            attempt=attempt,
+            max_attempts=max_attempts,
+            hint_section=hint_section,
+            question=question
+        )
+
+
+def _get_specific_guidance(feedback: str) -> str:
+    """Generate specific guidance based on feedback content"""
+    feedback_lower = feedback.lower()
+    
+    if 'too high' in feedback_lower:
+        return "Pay attention to the scale and ensure you're reading values correctly"
+    elif 'too low' in feedback_lower:
+        return "Make sure you haven't missed any items in your count"
+    elif 'count' in feedback_lower or 'number' in feedback_lower:
+        return "Count systematically from left to right or top to bottom"
+    elif 'compare' in feedback_lower or 'difference' in feedback_lower:
+        return "Identify exact values for each element before calculating"
+    elif 'maximum' in feedback_lower or 'minimum' in feedback_lower:
+        return "Check every single data point to find the true extreme"
+    elif 'trend' in feedback_lower:
+        return "Analyze the overall pattern from start to end"
+    elif 'color' in feedback_lower or 'legend' in feedback_lower:
+        return "Pay close attention to the legend and color coding"
+    else:
+        return "Double-check all relevant data points before answering"
+
+
+def _extract_key_points(feedback: str, observation: Dict[str, Any]) -> List[str]:
+    """Extract key points for detailed reflection template"""
+    points = []
+    feedback_lower = feedback.lower()
+    question = observation.get('question', '').lower()
+    
+    # Point 1: Error type
+    if 'too high' in feedback_lower or 'too low' in feedback_lower:
+        points.append("Check if you're misreading the scale or units")
+    elif 'incorrect' in feedback_lower:
+        points.append("Verify you understood the question correctly")
+    else:
+        points.append("Review your interpretation of the data")
+    
+    # Point 2: Question-specific guidance
+    if 'how many' in question:
+        points.append("Count each item individually and systematically")
+    elif 'which' in question or 'what' in question:
+        points.append("Read all labels and legends carefully")
+    elif 'compare' in question:
+        points.append("Ensure you're comparing the right elements")
+    else:
+        points.append("Focus on the specific data requested")
+    
+    # Point 3: General improvement
+    if observation.get('attempt', 2) >= 3:
+        points.append("Take a deep breath and approach the problem fresh")
+    else:
+        points.append("Look for details you might have overlooked")
+    
+    return points

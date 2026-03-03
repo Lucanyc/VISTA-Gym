@@ -1,0 +1,1 @@
+from .evaluators.chartqa import ChartQAEvaluator

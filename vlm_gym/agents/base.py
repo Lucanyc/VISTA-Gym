@@ -21,7 +21,7 @@ class AgentConfig:
     model_path: Optional[str] = None  # For local models
     
     # Generation parameters
-    max_new_tokens: int = 128
+    max_new_tokens: int = 1000
     temperature: float = 0.7
     top_p: float = 0.95
     do_sample: bool = True

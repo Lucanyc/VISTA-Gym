@@ -1,18 +1,21 @@
+
 # vlm_gym/environments/__init__.py
 """
 VLM Gym Environments Module
+
 This module provides environments for vision-language model tasks.
 It includes a registration system for easy environment creation and management.
 """
+
 import logging
 
-# Import base classes
+# 导入基础类
 from .base import BaseVLMEnv
 from .vision_qa_env import VisionQAEnv
 
-# Import registration system
+# 导入注册系统
 from .registration import (
-    # Core functions
+    # 核心函数
     register_env,
     register_task,
     register_adapter,
@@ -22,25 +25,25 @@ from .registration import (
     get_env_spec,
     init_registry,
     
-    # Management functions
+    # 管理函数
     update_env,
     unregister_env,
     export_registry,
     
-    # Base classes
+    # 基类
     BaseAdapter,
     BaseTask,
     
-    # Configuration classes
+    # 配置类
     EnvConfig,
     TaskConfig,
     EnvSpec,
 )
 
-# Set up logging
+# 设置日志
 logger = logging.getLogger(__name__)
 
-# Auto-initialize registry
+# 自动初始化注册表
 try:
     init_registry()
     logger.info("VLM Gym registry initialized successfully")
@@ -48,13 +51,13 @@ except Exception as e:
     logger.warning(f"Failed to initialize VLM Gym registry: {e}")
     logger.info("You can manually initialize with init_registry()")
 
-# Exported public API
+# 导出的公共API
 __all__ = [
-    # Environment classes
+    # 环境类
     'BaseVLMEnv',
     'VisionQAEnv',
     
-    # Registration system - Core functions
+    # 注册系统 - 核心功能
     'register_env',
     'register_task', 
     'register_adapter',
@@ -64,43 +67,44 @@ __all__ = [
     'get_env_spec',
     'init_registry',
     
-    # Registration system - Management functions
+    # 注册系统 - 管理功能
     'update_env',
     'unregister_env',
     'export_registry',
     
-    # Base classes
+    # 基类
     'BaseAdapter',
     'BaseTask',
     
-    # Configuration classes
+    # 配置类
     'EnvConfig',
     'TaskConfig',
     'EnvSpec',
 ]
 
-# Provide convenient top-level access
+# 提供便捷的顶层访问
 def create_env(env_id: str, **kwargs):
     """
-    Convenience function: Create an environment
+    便捷函数：创建环境
     
-    This is an alias for make(), providing a more intuitive API
+    这是make()的别名，提供更直观的API
     
     Args:
-        env_id: Environment ID
-        **kwargs: Environment configuration parameters
+        env_id: 环境ID
+        **kwargs: 环境配置参数
         
     Returns:
-        Environment instance
+        环境实例
         
     Example:
         >>> env = create_env("chartqa", max_steps=5)
     """
     return make(env_id, **kwargs)
 
+
 def available_envs():
     """
-    Convenience function: Print all available environments
+    便捷函数：打印所有可用的环境
     
     Example:
         >>> available_envs()
@@ -118,5 +122,6 @@ def available_envs():
         if env['tags']:
             print(f"    Tags: {', '.join(env['tags'])}")
 
-# Version info
+
+# 版本信息
 __version__ = "0.1.0"

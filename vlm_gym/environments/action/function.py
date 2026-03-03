@@ -1,6 +1,7 @@
+
 # vlm_gym/environments/action/function.py
 """
-General system-level action functions
+通用系统级动作函数
 """
 import os
 import json
@@ -11,7 +12,7 @@ from pathlib import Path
 
 def request_info(file_path: str, info_type: str, keyterm: str = "") -> str:
     """
-    Request specific information about a file or directory
+    请求文件或目录的特定信息
     
     Examples:
         request_info("/path/to/dataset/", "list_files", "")
@@ -54,7 +55,7 @@ def request_info(file_path: str, info_type: str, keyterm: str = "") -> str:
             if file_path.endswith('.json'):
                 with open(file_path, 'r') as f:
                     data = json.load(f)
-                    # Simple keyword search
+                    # 简单的关键词搜索
                     matches = []
                     for key, value in data.items():
                         if keyterm.lower() in str(value).lower():
@@ -69,7 +70,7 @@ def request_info(file_path: str, info_type: str, keyterm: str = "") -> str:
 
 def validate_response(response: str, expected_format: str) -> Dict[str, Any]:
     """
-    Validate response format
+    验证响应格式
     
     Examples:
         validate_response("3 cars", "number")
@@ -122,7 +123,7 @@ def validate_response(response: str, expected_format: str) -> Dict[str, Any]:
 
 def save_result(content: Any, output_path: str, format: str = "json") -> Dict[str, Any]:
     """
-    Save result to file
+    保存结果到文件
     
     Examples:
         save_result({"count": 5}, "/path/to/output.json")
@@ -151,7 +152,7 @@ def save_result(content: Any, output_path: str, format: str = "json") -> Dict[st
 
 def debug_info(action_name: str, params: Dict, error: str) -> str:
     """
-    Generate debugging information
+    生成调试信息
     
     Examples:
         debug_info("analyze_image", {"image_path": "/path/img.jpg"}, "File not found")

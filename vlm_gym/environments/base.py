@@ -15,14 +15,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class EnvObservation:
-    """Environment observation result"""
+    """环境观察结果"""
     type: str
     content: Any
     timestamp: float
     metadata: Dict[str, Any] = None
 
 class BaseVLMEnv(gym.Env, ABC):
-    """Base class for VLM environments"""
+    """VLM环境基础类"""
     
     metadata = {"render_modes": ["human", "rgb_array"]}
     
@@ -41,57 +41,57 @@ class BaseVLMEnv(gym.Env, ABC):
         self.max_steps = max_steps
         self.time_limit = time_limit
         
-        # Initialize task and action set
+        # 初始化任务和动作集
         self.task = None
         self.action_set = action_set
         
-        # Define observation space
+        # 定义观察空间
         self.observation_space = spaces.Dict({
             "image": ImageSpace(),
             "text": Unicode(),
             "chat_history": spaces.Sequence(
                 spaces.Dict({
                     "role": Unicode(),
-                    "content": AnyDict(),  # Supports multimodal content
+                    "content": AnyDict(),  # 支持多模态内容
                     "timestamp": spaces.Box(low=0, high=float('inf'), shape=()),
                 })
             ),
             "task_info": AnyDict(),
         })
         
-        # Define action space
+        # 定义动作空间
         self.action_space = Unicode()
         
-        # Environment state
+        # 环境状态
         self.chat: MultiModalChat = None
         self.current_step = 0
         self.start_time = None
         self.history: List[EnvObservation] = []
         
     def reset(self, task_id: str = None, **kwargs) -> Tuple[Dict, Dict]:
-        """Reset the environment"""
-        # Clean up old task
+        """重置环境"""
+        # 清理旧任务
         if self.task:
             self.task.teardown()
             
-        # Create new task
+        # 创建新任务
         self.task = self.task_entrypoint(
             task_id=task_id,
             **self.task_kwargs
         )
         
-        # Initialize chat
+        # 初始化聊天
         self.chat = MultiModalChat()
         
-        # Set up task
+        # 设置任务
         task_goal, task_info = self.task.setup()
         
-        # Initialize environment state
+        # 初始化环境状态
         self.current_step = 0
         self.start_time = time.time()
         self.history = []
         
-        # Get initial observation
+        # 获取初始观察
         obs = self._get_obs()
         info = {
             "task_goal": task_goal,
@@ -101,10 +101,10 @@ class BaseVLMEnv(gym.Env, ABC):
         return obs, info
     
     def step(self, action: str) -> Tuple[Dict, float, bool, bool, Dict]:
-        """Execute an action"""
+        """执行动作"""
         self.current_step += 1
         
-        # Execute action
+        # 执行动作
         try:
             result = self._execute_action(action)
         except Exception as e:
@@ -115,18 +115,18 @@ class BaseVLMEnv(gym.Env, ABC):
                 "success": False
             }
         
-        # Create observation
+        # 创建观察
         obs = self._create_observation(result)
         self.history.append(obs)
         
-        # Validate task state
+        # 验证任务状态
         reward, done, info = self.task.validate(
             self.chat.messages,
             obs,
             self.history
         )
         
-        # Check termination conditions
+        # 检查终止条件
         truncated = False
         if self.current_step >= self.max_steps:
             truncated = True
@@ -139,16 +139,16 @@ class BaseVLMEnv(gym.Env, ABC):
     
     @abstractmethod
     def _execute_action(self, action: str) -> Dict[str, Any]:
-        """Execute a specific action"""
+        """执行具体动作"""
         pass
     
     @abstractmethod
     def _get_obs(self) -> Dict[str, Any]:
-        """Get the current observation"""
+        """获取当前观察"""
         pass
     
     def _create_observation(self, result: Dict[str, Any]) -> EnvObservation:
-        """Create an observation object"""
+        """创建观察对象"""
         return EnvObservation(
             type=result.get("type", "unknown"),
             content=result.get("content"),
@@ -157,7 +157,7 @@ class BaseVLMEnv(gym.Env, ABC):
         )
     
     def close(self):
-        """Close the environment"""
+        """关闭环境"""
         if self.task:
             self.task.teardown()
         if self.chat:

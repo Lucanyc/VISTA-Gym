@@ -104,12 +104,12 @@ class ChartQAAgent(VLMAgent):
             print(f"  - tool_strategy={tool_params.get('tool_selection_strategy', 'adaptive')}")
     
     def load_model(self):
-        """Force load model"""
+        """强制加载模型"""
         if not hasattr(self, '_loaded') or not self._loaded:
-            # Call parent class load_model method
+            # 调用父类的 load_model 方法
             super().load_model()
             
-            # If tool_agent exists, ensure it uses the same model
+            # 如果tool_agent存在，确保它也使用相同的模型
             if self.tool_agent and hasattr(self, 'model'):
                 self.tool_agent.model = self.model
                 self.tool_agent.processor = self.processor
@@ -159,10 +159,10 @@ class ChartQAAgent(VLMAgent):
         question = observation.get('question', '')
         question_type = self.chartqa_reasoner.classify_question(question)
         
-        # Define calculation question types
+        # 定义计算类问题类型
         CALCULATION_TYPES = ['summation', 'average', 'percentage', 'difference', 'ratio']
         
-        # Set flag if this is a calculation question
+        # 如果是计算类问题，设置标志
         if question_type in CALCULATION_TYPES:
             self._current_is_calculation = True
             if self.debug:
@@ -301,26 +301,26 @@ class ChartQAAgent(VLMAgent):
         return answer
     
     def _preprocess_for_calculation(self, question: str, response: str) -> str:
-        """Preprocess response to be more suitable for calculator processing"""
+        """预处理响应，使其更适合计算器处理"""
         
         question_type = self.chartqa_reasoner.classify_question(question)
         
         if self.debug:
             print(f"[ChartQAAgent] Preprocessing for {question_type} calculation")
         
-        # For summation questions, if response doesn't have explicit value list, try to extract
+        # 对于求和问题，如果响应中没有明确的数值列表，尝试提取
         if question_type == 'summation' and 'sum' in question.lower():
-            # Check if specific year values are needed
+            # 检查是否需要特定年份的值
             year_match = re.search(r'in (?:the years? )?(\d{4})(?: and (\d{4}))?', question)
             if year_match:
                 years = [year_match.group(1)]
                 if year_match.group(2):
                     years.append(year_match.group(2))
                 
-                # Find values for these years in response
+                # 在响应中查找这些年份的值
                 enhanced_response = response
                 for year in years:
-                    # Look for "2014: 51" or "51 in 2014" format
+                    # 查找 "2014: 51" 或 "51 in 2014" 格式
                     patterns = [
                         rf'{year}[:\s]+(\d+)',
                         rf'(\d+)\s+in\s+{year}',
@@ -338,9 +338,9 @@ class ChartQAAgent(VLMAgent):
                 
                 return enhanced_response
         
-        # For average questions, ensure all relevant values are clearly labeled
+        # 对于平均值问题，确保所有相关数值都被明确标记
         elif question_type == 'average':
-            # Look for conditions (e.g., "above 50")
+            # 查找条件（如 "above 50"）
             condition_match = re.search(r'(?:above|below|over|under)\s+(\d+)', question, re.IGNORECASE)
             if condition_match:
                 threshold = condition_match.group(1)
@@ -349,50 +349,50 @@ class ChartQAAgent(VLMAgent):
         return response
     
     def _validate_calculation_result(self, result: Dict[str, Any], question: str) -> bool:
-        """Validate whether calculation result is reasonable"""
+        """验证计算结果是否合理"""
         
         if not result.get('calculator_used', False):
-            return True  # Non-calculation result, skip validation
+            return True  # 非计算结果，不验证
         
         answer = result.get('answer', '')
         
         try:
-            # Try to extract numeric value
+            # 尝试提取数值
             num_value = float(re.sub(r'[^\d.-]', '', str(answer)))
             
-            # Basic sanity check
+            # 基本合理性检查
             question_lower = question.lower()
             
             if self.debug:
                 print(f"[ChartQAAgent] Validating calculation result: {answer} (numeric: {num_value})")
             
-            # Percentages should be between 0-100 (in most cases)
+            # 百分比应该在 0-100 之间（大多数情况）
             if 'percent' in question_lower and '%' in str(answer):
-                if num_value < 0 or num_value > 200:  # Allow some cases above 100%
+                if num_value < 0 or num_value > 200:  # 允许一些超过100%的情况
                     if self.debug:
                         print(f"[ChartQAAgent] Invalid percentage: {num_value}")
                     return False
             
-            # Counting questions usually don't yield very large numbers
+            # 计数问题通常不会很大
             if 'how many' in question_lower and num_value > 1000:
                 if self.debug:
                     print(f"[ChartQAAgent] Unrealistic count: {num_value}")
                 return False
             
-            # Years should be in a reasonable range
+            # 年份应该在合理范围
             if 'year' in question_lower and (num_value < 1900 or num_value > 2100):
                 if self.debug:
                     print(f"[ChartQAAgent] Invalid year: {num_value}")
                 return False
             
-            # Sum results should not be negative
+            # 求和结果不应该是负数
             if 'sum' in question_lower and num_value < 0:
                 if self.debug:
                     print(f"[ChartQAAgent] Negative sum: {num_value}")
                 return False
             
         except:
-            # If cannot convert to number, may be a non-numerical answer
+            # 如果不能转换为数字，可能是非数值答案
             pass
         
         return True
@@ -400,7 +400,7 @@ class ChartQAAgent(VLMAgent):
     def _chartqa_direct_generation(self, observation: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         """ChartQA's original direct generation logic with calculation enhancements"""
         
-        # Enhance question prompt
+        # 增强问题提示
         original_question = observation.get('question', '')
         enhanced_question = self._enhance_question_with_guidance(original_question)
         
@@ -411,13 +411,13 @@ class ChartQAAgent(VLMAgent):
             if self._current_is_calculation:
                 print(f"[ChartQAAgent] This is a CALCULATION question")
         
-        # ===== Direct generation =====
+        # ===== 直接生成 =====
         try:
-            # 1. Load image
+            # 1. 加载图像
             image_path = observation['image_path']
             image = Image.open(image_path).convert('RGB')
             
-            # 2. Prepare messages
+            # 2. 准备消息
             messages = [{
                 "role": "user",
                 "content": [
@@ -426,44 +426,44 @@ class ChartQAAgent(VLMAgent):
                 ]
             }]
             
-            # 3. Apply chat template
+            # 3. 应用chat template
             text = self.processor.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True
             )
             
-            # 4. Process inputs
+            # 4. 处理输入
             inputs = self.processor(
                 text=[text],
                 images=[image],
                 return_tensors="pt"
             ).to(self.model.device)
             
-            # 5. Generate - stricter parameter control
+            # 5. 生成 - 更严格的参数控制
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=64,       # Force concise answer
-                    min_new_tokens=1,        # Allow very short answers
-                    do_sample=False,         # Ensure greedy decoding
-                    temperature=0.1,         # Low temperature
-                    repetition_penalty=1.0,  # Disable repetition penalty for now
+                    max_new_tokens=64,       # 强制简洁回答
+                    min_new_tokens=1,        # 允许非常短的答案
+                    do_sample=False,         # 确保贪婪解码
+                    temperature=0.1,         # 低温度
+                    repetition_penalty=1.0,  # 暂时关闭重复惩罚
                     pad_token_id=self.processor.tokenizer.pad_token_id,
                     eos_token_id=self.processor.tokenizer.eos_token_id,
                 )
             
-            # 6. Decode
+            # 6. 解码
             generated_ids = outputs[:, inputs.input_ids.shape[1]:]
             raw_response = self.processor.batch_decode(
                 generated_ids, 
                 skip_special_tokens=True
             )[0]
             
-            # 7. Clean output
+            # 7. 清理输出
             base_response = self._clean_model_output(raw_response)
             
-            # 8. If calculation question, preprocess response
+            # 8. 如果是计算问题，预处理响应
             if self._current_is_calculation:
                 base_response = self._preprocess_for_calculation(original_question, base_response)
             
@@ -474,7 +474,7 @@ class ChartQAAgent(VLMAgent):
                 print(f"\n[ChartQAAgent] ===== CLEANED RESPONSE =====")
                 print(base_response[:500])
             
-            # Record token usage
+            # 记录token使用情况
             tokens_generated = generated_ids.shape[1]
             tokens_used = inputs.input_ids.shape[1] + tokens_generated
             
@@ -483,11 +483,11 @@ class ChartQAAgent(VLMAgent):
             import traceback
             traceback.print_exc()
             
-            # If direct generation fails, call parent class
+            # 如果直接生成失败，调用父类
             print(f"[ChartQAAgent] Falling back to parent act method")
             action, extra_info = super().act(observation)
             
-            # Clean action returned by parent class
+            # 清理父类返回的action
             if isinstance(action, str):
                 action = self._clean_model_output(action)
             
@@ -496,13 +496,13 @@ class ChartQAAgent(VLMAgent):
             
             return action, extra_info
         
-        # ===== Extract answer =====
+        # ===== 提取答案 =====
         answer = self._extract_final_answer(base_response)
         
         if self.debug:
             print(f"[ChartQAAgent] Extracted answer: '{answer}'")
         
-        # ===== Build return info =====
+        # ===== 构建返回信息 =====
         extra_info = {
             'tokens_generated': tokens_generated,
             'tokens_used': tokens_used,
@@ -520,7 +520,7 @@ class ChartQAAgent(VLMAgent):
             'is_calculation_question': self._current_is_calculation
         }
         
-        # ===== Structured reasoning (if needed) =====
+        # ===== 结构化推理（如果需要）=====
         if self.enable_structured_reasoning and original_question:
             question_type = self.chartqa_reasoner.classify_question(original_question)
             
@@ -537,7 +537,7 @@ class ChartQAAgent(VLMAgent):
                 answer = structured_result['answer']
                 extra_info.update(structured_result['extra_info'])
                 
-                # Record calculation history
+                # 记录计算历史
                 if structured_result['extra_info'].get('calculator_used', False):
                     self.calculation_history.append({
                         'question': original_question,
@@ -546,7 +546,7 @@ class ChartQAAgent(VLMAgent):
                         'result': answer
                     })
         
-        # Return final answer
+        # 返回最终答案
         final_answer = answer if answer else base_response
         
         if self.debug:
@@ -572,18 +572,18 @@ class ChartQAAgent(VLMAgent):
             'numerical', 'retrieval', 'trend', 'other'
         ]
         
-        # Define calculation question types
+        # 定义计算类问题类型
         CALCULATION_TYPES = ['summation', 'average', 'percentage', 'difference', 'ratio']
         
         if question_type not in SUPPORTED_TYPES:
             return None
         
-        # For calculation questions, force use of reasoner
+        # 如果是计算类问题，强制使用 reasoner
         if question_type in CALCULATION_TYPES and self.use_calculator:
             if self.debug:
                 print(f"[ChartQAAgent] Forcing calculation for {question_type} question")
             
-            # Even if response already has an answer, verify calculation through reasoner
+            # 即使 response 中已经有答案，也要通过 reasoner 验证计算
             enhanced_result = self.chartqa_reasoner.reason(
                 question,
                 response,
@@ -593,11 +593,11 @@ class ChartQAAgent(VLMAgent):
             if self.debug:
                 print(f"[ChartQAAgent] Reasoner result: {enhanced_result}")
             
-            # If calculator was used, validate the result
+            # 如果使用了计算器，验证结果
             if enhanced_result.get('calculator_used', False):
-                # Validate calculation result
+                # 验证计算结果
                 if self._validate_calculation_result(enhanced_result, question):
-                    # If validation passes, trust the calculation result
+                    # 如果验证通过，优先相信计算结果
                     return {
                         'answer': str(enhanced_result['answer']),
                         'extra_info': {
@@ -654,13 +654,13 @@ class ChartQAAgent(VLMAgent):
             if self.debug:
                 print(f"[ChartQAAgent] Enhanced result: {enhanced_result}")
             
-            # Set confidence thresholds - lower thresholds for calculation questions
+            # Set confidence thresholds - 降低计算类问题的阈值
             confidence_thresholds = {
-                'summation': 0.4,      # Lower threshold
-                'average': 0.3,        # Lower threshold
-                'percentage': 0.3,     # Lower threshold
-                'difference': 0.3,     # Lower threshold
-                'ratio': 0.3,          # Lower threshold
+                'summation': 0.4,      # 降低阈值
+                'average': 0.3,        # 降低阈值
+                'percentage': 0.3,     # 降低阈值
+                'difference': 0.3,     # 降低阈值
+                'ratio': 0.3,          # 降低阈值
                 'comparison': 0.5,
                 'minmax': 0.5,
                 'numerical': 0.4,
@@ -715,27 +715,27 @@ class ChartQAAgent(VLMAgent):
     # ===== Keep all existing helper methods unchanged =====
     
     def _clean_model_output(self, output: str) -> str:
-        """Clean abnormal characters and patterns from model output"""
+        """清理模型输出中的异常字符和模式"""
         if not output:
             return output
             
-        original_output = output  # Save original output for debugging
+        original_output = output  # 保存原始输出用于调试
         
-        # 1. Remove addCriterion (including various variants)
+        # 1. 移除addCriterion（包括各种变体）
         cleaned = re.sub(r'\s*addCriterion\s*', ' ', output)
         cleaned = re.sub(r'\s*addcriterion\s*', ' ', cleaned, flags=re.IGNORECASE)
         
-        # 2. Remove action format wrapper (if present)
+        # 2. 移除action格式包装（如果存在）
         action_match = re.search(r'answer_question\(answer=["\'](.+?)["\']\)', cleaned, re.DOTALL)
         if action_match:
             cleaned = action_match.group(1)
             if self.debug:
                 print(f"[ChartQAAgent] Extracted from action format")
         
-        # 3. Remove possible special tokens
+        # 3. 移除可能的特殊标记
         cleaned = re.sub(r'<\|[^>]+\|>', '', cleaned)
         
-        # 4. Fix repeated sentences or phrases
+        # 4. 修复重复的句子或短语
         lines = cleaned.split('\n')
         unique_lines = []
         prev_line = None
@@ -749,20 +749,20 @@ class ChartQAAgent(VLMAgent):
                     unique_lines.append(line)
             else:
                 repeat_count = 0
-                if line:  # Only add non-empty lines
+                if line:  # 只添加非空行
                     unique_lines.append(line)
                 prev_line = line
         
         cleaned = '\n'.join(unique_lines)
         
-        # 5. Clean excessive whitespace
+        # 5. 清理过多的空白
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
         cleaned = re.sub(r' {2,}', ' ', cleaned)
         
-        # 6. Remove isolated Chinese characters
+        # 6. 移除孤立的中文字符
         cleaned = re.sub(r'(?<![a-zA-Z])[\u4e00-\u9fff]+(?![a-zA-Z])', '', cleaned)
         
-        # 7. Ensure clean ending
+        # 7. 确保结尾干净
         cleaned = cleaned.strip()
         
         if self.debug and original_output != cleaned:
@@ -777,17 +777,17 @@ class ChartQAAgent(VLMAgent):
         return cleaned
     
     def _is_yes_no_question(self, question: str) -> bool:
-        """Determine if question is a Yes/No question"""
+        """判断是否是Yes/No问题"""
         question_lower = question.lower()
         
-        # Exclude questions that are clearly not Yes/No
+        # 排除明显不是Yes/No的问题
         if any(phrase in question_lower for phrase in [
             'how many', 'what is', 'which', 'when', 'where', 'who', 
             'what year', 'in which year', 'what value', 'sum', 'total'
         ]):
             return False
         
-        # Only return True for explicit Yes/No patterns
+        # 只有明确的Yes/No模式才返回True
         yes_no_patterns = [
             r'^is\s+',      # Is the value...
             r'^are\s+',     # Are there...
@@ -809,69 +809,69 @@ class ChartQAAgent(VLMAgent):
         return False
     
     def _enhance_question_with_guidance(self, question: str) -> str:
-        """Add analysis guidance based on question type"""
+        """根据问题类型添加分析指导"""
         question_lower = question.lower()
         
-        # 1. Counting questions
+        # 1. 计数问题
         if any(phrase in question_lower for phrase in ['how many', 'count', 'number of']):
             return f"""Look at the chart and count the items that match the criteria.
 Question: {question}
 Answer with just a number: """
         
-        # 2. Summation questions
+        # 2. 求和问题
         elif any(phrase in question_lower for phrase in ['sum', 'total', 'add']):
             return f"""Calculate the sum of the relevant values from the chart.
 Question: {question}
 Answer with the total: """
         
-        # 3. Year/time questions
+        # 3. 年份/时间问题
         elif any(phrase in question_lower for phrase in ['which year', 'what year', 'when', 'in which year']):
             return f"""Find the year or time period requested in the chart.
 Question: {question}
 Answer: """
         
-        # 4. Yes/No questions - use stricter judgment
+        # 4. Yes/No问题 - 使用更严格的判断
         elif self._is_yes_no_question(question):
             return f"""Look at the chart and answer yes or no.
 Question: {question}
 Answer (Yes/No): """
         
-        # 5. Value/data lookup questions
+        # 5. 值/数据查找问题
         elif any(phrase in question_lower for phrase in ['what is the', 'what was the', 'what value', 'which value']):
             return f"""Find the specific value in the chart.
 Question: {question}
 Answer: """
         
-        # 6. Other questions - generic prompt
+        # 6. 其他问题 - 通用提示
         else:
             return f"""Analyze the chart and answer the question.
 Question: {question}
 Short answer: """
     
     def _extract_final_answer(self, response: str) -> str:
-        """Extract final answer from response"""
+        """从响应中提取最终答案"""
         import re
         
         response = response.strip()
         
-        # 1. Handle Yes/No answer first
+        # 1. 优先处理Yes/No答案
         first_word = response.split()[0].lower() if response.split() else ""
         if first_word in ['yes', 'no']:
             return first_word.capitalize()
         
-        # Check if the entire response explicitly contains yes or no
+        # 检查整个响应是否明确包含yes或no
         response_lower = response.lower()
         if response_lower.startswith('yes,') or response_lower.startswith('yes ') or response_lower == 'yes':
             return 'Yes'
         elif response_lower.startswith('no,') or response_lower.startswith('no ') or response_lower == 'no':
             return 'No'
         
-        # 2. Try to extract direct answer patterns first
+        # 2. 先尝试提取直接的答案模式
         answer_patterns = [
-            r'Answer with just a number:\s*(\d+)',  # Match our prompt format
-            r'Answer with the total:\s*(\d+)',      # Summation format
-            r'Answer \(Yes/No\):\s*(\w+)',          # Yes/No format
-            r'Answer:\s*([^\n,.]+)',                 # Generic answer format
+            r'Answer with just a number:\s*(\d+)',  # 匹配我们的提示格式
+            r'Answer with the total:\s*(\d+)',      # 求和格式
+            r'Answer \(Yes/No\):\s*(\w+)',         # Yes/No格式
+            r'Answer:\s*([^\n,.]+)',                # 通用答案格式
             r'Direct Answer:\s*([^\n]+)',
             r'Final answer:\s*([^\n]+)',
             r'The answer is:\s*([^\n]+)',
@@ -883,66 +883,66 @@ Short answer: """
             if match:
                 return match.group(1).strip('.,!? ')
         
-        # 3. For year questions, find 4-digit numbers
+        # 3. 对于年份问题，查找4位数字
         if re.search(r'year|when', response, re.IGNORECASE):
             years = re.findall(r'\b(19\d{2}|20\d{2})\b', response)
             if years:
                 return years[0]
         
-        # 4. For other numerical answers, find standalone numbers
-        # Prefer numbers at end of sentence
+        # 4. 对于其他数字答案，查找独立的数字
+        # 优先查找句末的数字
         sentence_end_number = re.search(r'(\d+)[.,!?]?\s*$', response)
         if sentence_end_number:
             return sentence_end_number.group(1)
         
-        # Find all numbers
+        # 查找所有数字
         numbers = re.findall(r'\b(\d+)\b', response)
         if numbers:
-            # If there are year-format numbers, return those first
+            # 如果有年份格式的数字，优先返回
             for num in numbers:
                 if len(num) == 4 and (num.startswith('19') or num.startswith('20')):
                     return num
-            # Otherwise return the first number
+            # 否则返回第一个数字
             return numbers[0]
         
-        # 5. Return the first line or first 50 characters of the cleaned response
+        # 5. 返回整个清理后的响应的第一行或前50个字符
         first_line = response.split('\n')[0] if response else response
         if len(first_line) > 50:
             return first_line[:50].strip()
         return first_line
     
     def _validate_answer(self, answer: str, question_type: str) -> bool:
-        """Validate whether answer is reasonable"""
+        """验证答案是否合理"""
         if not answer:
             return False
         
-        # Answer should not be too long (except for retrieval and other types)
+        # 答案不应该太长（除了retrieval和other类型）
         if question_type not in ['retrieval', 'other'] and len(answer) > 50:
             return False
         
-        # Numerical types should be able to extract a number
+        # 数值类型应该能提取出数字
         if question_type in ['counting', 'summation', 'average', 'percentage', 'difference', 'ratio', 'numerical']:
             import re
-            # Check if it contains a number
+            # 检查是否包含数字
             if not re.search(r'\d+', answer):
                 return False
             
-            # Avoid returning entire sentences (check if too many words)
+            # 避免返回整个句子（检查是否有太多单词）
             if ' ' in answer and len(answer.split()) > 5:
                 return False
             
-            # For pure numerical types, ensure it's mainly numbers
-            if question_type != 'percentage':  # Percentages may include % symbol
-                # After removing spaces and punctuation, should be mostly numbers
+            # 对于纯数值类型，确保主要是数字
+            if question_type != 'percentage':  # 百分比可能包含%符号
+                # 移除空格和标点后，应该主要是数字
                 cleaned = re.sub(r'[^\d.]', '', answer)
-                if len(cleaned) < len(answer) * 0.5:  # At least 50% should be numbers
+                if len(cleaned) < len(answer) * 0.5:  # 至少50%应该是数字
                     return False
         
-        # Avoid returning meta-information containing "question" or "answer"
+        # 避免返回包含"question"或"answer"的元信息
         if any(meta in answer.lower() for meta in ['question', 'answer is', 'the answer']):
             return False
         
-        # Special handling for Yes/No questions
+        # 对于Yes/No问题的特殊处理
         if answer.lower() in ['yes', 'no']:
             return True
         

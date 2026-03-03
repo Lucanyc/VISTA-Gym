@@ -8,32 +8,32 @@ from .vision_qa_task import VisionQATask
 
 class ChartQATask(VisionQATask):
     """
-    ChartQA specific task
+    ChartQA 特定任务
     
-    Handles chart-related visual question answering tasks, including:
-    - Data extraction
-    - Trend analysis
-    - Numerical calculation
-    - Chart comparison
+    专门处理图表相关的视觉问答任务，包括：
+    - 数据提取
+    - 趋势分析
+    - 数值计算
+    - 图表比较
     """
     
     @classmethod
     def get_task_id(cls) -> str:
-        """Get task type ID"""
+        """获取任务类型ID"""
         return "vlm-gym.chart-qa"
     
     def setup(self) -> Tuple[str, Dict[str, Any]]:
-        """Set up ChartQA specific task"""
-        # Call parent setup
+        """设置ChartQA特定的任务"""
+        # 调用父类setup
         task_goal, task_info = super().setup()
         
-        # Add ChartQA specific processing
+        # 添加ChartQA特定的处理
         task_info["chart_type"] = self._detect_chart_type()
         task_info["requires_calculation"] = self._requires_calculation()
         task_info["data_extraction_needed"] = self._needs_data_extraction()
         task_info["dataset"] = "chartqa"
         
-        # Modify task goal to include chart-specific guidance
+        # 修改任务目标以包含图表特定指导
         enhanced_goal = task_goal
         
         if task_info["requires_calculation"]:
@@ -42,7 +42,7 @@ class ChartQATask(VisionQATask):
         if task_info["data_extraction_needed"]:
             enhanced_goal += "\nPlease carefully extract the relevant data points from the chart before answering."
         
-        # Add ChartQA specific hints
+        # 添加ChartQA特定的提示
         enhanced_goal += "\n\nWhen analyzing the chart, please:"
         enhanced_goal += "\n- Identify the chart type and axes"
         enhanced_goal += "\n- Read values accurately from the chart"
@@ -51,10 +51,10 @@ class ChartQATask(VisionQATask):
         return enhanced_goal, task_info
     
     def _detect_chart_type(self) -> str:
-        """Detect chart type"""
+        """检测图表类型"""
         question_lower = self.question.lower() if self.question else ""
         
-        # Infer chart type based on question content
+        # 基于问题内容推断图表类型
         chart_keywords = {
             "bar_chart": ["bar", "column", "bars"],
             "line_chart": ["line", "trend", "over time", "timeline"],
@@ -68,7 +68,7 @@ class ChartQATask(VisionQATask):
             if any(keyword in question_lower for keyword in keywords):
                 return chart_type
         
-        # Infer based on question patterns
+        # 基于问题模式推断
         if "compare" in question_lower or "difference" in question_lower:
             return "comparative_chart"
         elif "total" in question_lower or "sum" in question_lower:
@@ -77,7 +77,7 @@ class ChartQATask(VisionQATask):
         return "unknown"
     
     def _requires_calculation(self) -> bool:
-        """Determine if calculation is required"""
+        """判断是否需要计算"""
         if not self.question:
             return False
         
@@ -92,7 +92,7 @@ class ChartQATask(VisionQATask):
         return any(keyword in question_lower for keyword in calculation_keywords)
     
     def _needs_data_extraction(self) -> bool:
-        """Determine if data extraction is needed"""
+        """判断是否需要数据提取"""
         if not self.question:
             return False
         
@@ -107,61 +107,61 @@ class ChartQATask(VisionQATask):
     
     def check_success(self, action: Any) -> Tuple[bool, str]:
         """
-        Check ChartQA answer
+        检查ChartQA答案
         
-        For numerical answers, allow a certain margin of error
+        对于数值答案，允许一定的误差范围
         """
         if not action:
             return False, "No answer provided"
         
-        # Clean answer format
+        # 清理答案格式
         action = str(action).strip()
         
-        # First try parent class check
+        # 首先尝试父类的检查
         success, feedback = super().check_success(action)
         
-        # If parent check fails, try ChartQA specific check
+        # 如果父类检查失败，尝试ChartQA特定的检查
         if not success and self.answer:
-            # Check numerical answer (allow margin of error)
+            # 检查数值答案（允许误差）
             user_value = self._extract_number(action)
             correct_value = self._extract_number(str(self.answer))
             
             if user_value is not None and correct_value is not None:
-                # Calculate relative error
+                # 计算相对误差
                 if correct_value == 0:
-                    # Absolute error check
+                    # 绝对误差检查
                     if abs(user_value - correct_value) <= 0.1:
                         return True, f"Correct! (exact match for zero value)"
                 else:
                     relative_error = abs(user_value - correct_value) / abs(correct_value)
-                    if relative_error <= 0.05:  # Allow 5% margin of error
+                    if relative_error <= 0.05:  # 允许5%的误差
                         return True, f"Correct! (within acceptable range: {correct_value:.2f} ± 5%)"
-                    elif relative_error <= 0.1:  # Partial credit for 10% error
+                    elif relative_error <= 0.1:  # 10%误差给部分分
                         return True, f"Acceptable answer (within 10% of {correct_value:.2f})"
                 
                 return False, f"Incorrect. Expected approximately {correct_value:.2f}, got {user_value:.2f}"
             
-            # Check unit conversion
+            # 检查单位转换
             if self._check_unit_conversion(action, str(self.answer)):
                 return True, "Correct! (with unit conversion)"
         
         return success, feedback
     
     def _extract_number(self, text: str) -> Optional[float]:
-        """Extract number from text"""
+        """从文本中提取数字"""
         if not text:
             return None
         
-        # Clean text
+        # 清理文本
         text = text.lower()
         
-        # Remove common interfering characters
+        # 移除常见的干扰字符
         text = text.replace(',', '').replace('%', '').replace('$', '')
         
-        # Handle percentage
+        # 处理百分比
         is_percentage = '%' in text or 'percent' in text
         
-        # Handle units
+        # 处理单位
         unit_multipliers = {
             'k': 1000, 'thousand': 1000, 'thousands': 1000,
             'm': 1000000, 'million': 1000000, 'millions': 1000000,
@@ -174,13 +174,13 @@ class ChartQATask(VisionQATask):
                 multiplier = value
                 text = text.replace(unit, '')
         
-        # Find number pattern
+        # 查找数字模式
         number_pattern = r'-?\d+\.?\d*'
         matches = re.findall(number_pattern, text)
         
         if matches:
             try:
-                # Return the first number found
+                # 返回找到的第一个数字
                 number = float(matches[0])
                 if is_percentage and number > 1:
                     number = number / 100
@@ -191,15 +191,15 @@ class ChartQATask(VisionQATask):
         return None
     
     def _check_unit_conversion(self, user_answer: str, correct_answer: str) -> bool:
-        """Check if the difference is caused by unit conversion"""
+        """检查是否是单位转换导致的差异"""
         user_value = self._extract_number(user_answer)
         correct_value = self._extract_number(correct_answer)
         
         if user_value is None or correct_value is None:
             return False
         
-        # Check common unit conversion ratios
-        common_ratios = [1000, 100, 12, 60, 24, 365]  # K/M, %, months/year, min/hour, hour/day, day/year
+        # 检查常见的单位转换比例
+        common_ratios = [1000, 100, 12, 60, 24, 365]  # K/M, %, 月/年, 分/时, 时/天, 天/年
         
         for ratio in common_ratios:
             if abs(user_value * ratio - correct_value) < 0.01 * correct_value:
@@ -216,19 +216,19 @@ class ChartQATask(VisionQATask):
         full_history: Optional[List[Any]] = None
     ) -> Tuple[float, bool, str, Dict[str, Any]]:
         """
-        Validate ChartQA task execution
+        验证ChartQA任务执行情况
         """
-        # Call parent validation
+        # 调用父类验证
         reward, done, message, info = super().validate(
             chat_history, observation, full_history
         )
         
-        # Add ChartQA specific information
+        # 添加ChartQA特定的信息
         info["chart_type"] = self._detect_chart_type()
         info["required_calculation"] = self._requires_calculation()
         info["data_extraction"] = self._needs_data_extraction()
         
-        # If numerical answer, add extracted numerical value info
+        # 如果是数值答案，添加提取的数值信息
         if info.get("answer_provided"):
             extracted_value = self._extract_number(str(info["answer_provided"]))
             if extracted_value is not None:
@@ -237,7 +237,7 @@ class ChartQATask(VisionQATask):
         return reward, done, message, info
     
     def get_metrics(self) -> Dict[str, Any]:
-        """Get ChartQA specific metrics"""
+        """获取ChartQA特定的指标"""
         metrics = super().get_metrics()
         
         metrics.update({
@@ -251,19 +251,19 @@ class ChartQATask(VisionQATask):
         return metrics
     
     def _assess_complexity(self) -> str:
-        """Assess question complexity"""
+        """评估问题复杂度"""
         if not self.question:
             return "unknown"
         
         question_lower = self.question.lower()
         
-        # Complex question features
+        # 复杂问题特征
         complex_features = [
             "compare", "calculate", "trend", "correlation",
             "percentage change", "growth rate", "difference between"
         ]
         
-        # Simple question features
+        # 简单问题特征
         simple_features = [
             "what is", "which", "highest", "lowest", "maximum", "minimum"
         ]
