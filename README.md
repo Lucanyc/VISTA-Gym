@@ -102,7 +102,7 @@ python scripts/run_chartqa_eval_reflection_with_tool.py \
   --enable-reflection \
   --max-attempts 3 \
   --numerical-tolerance 0.05 \
-  --limit 1000
+  --limit 50
 ```
 
 ### Run with Tool-Augmented Reasoning
