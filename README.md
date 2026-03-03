@@ -58,9 +58,9 @@ A scalable reinforcement learning gym for training tool-integrated visual reason
 | Directory | Description |
 |---|---|
 | `vlm_gym/environments/` | Pluggable vision-QA environments (ChartQA, ScienceQA, Geometry3K, etc.) |
-| `vlm_gym/agents/` | VLM agent implementations (Qwen2.5-VL-7B-Instruct reference, Internvl3-8b, etc.) |
-| `vlm_gym/tools/` | Visual tools (OCR, GroundingDINO, image processing, etc.) |
-| `vlm_gym/tasks/` | Task-specific reasoning |
+| `vlm_gym/agents/` | VLM agent implementations (Qwen2.5-VL-7B-Instruct, InternVL3-8B, etc.) |
+| `vlm_gym/environments/tools/` | Visual tools (ChartMoE, DeepEyes, GroundingDINO, EasyOCR, SAM2, etc.) |
+| `vlm_gym/tasks/` | Task-specific reasoning, evaluation, and feedback components |
 | `scripts/` | Evaluation entry points |
 | `data_adapters/` | Dataset converters to unified vlmgym format |
 
@@ -83,6 +83,17 @@ Environment (ChartQA)            Agent (VLM)
     │                                │
     │   reward: 1.0 (correct)        │
 ```
+
+| Tool | Description | Flag |
+|---|---|---|
+| ChartMoE | Chart data extraction (to_table, extract_data, describe) | `--enable-chartmoe` |
+| DeepEyes | Image zoom/magnification for fine-grained visual analysis | `--enable-deepeyes` |
+| Grounding DINO | Object detection and grounding | `--config-experiment chartqa_grounding` |
+| EasyOCR | Optical character recognition | `--enable-easyocr` |
+| SAM2 | Segment Anything 2 for image segmentation | `--enable-sam2` |
+| MultiMath | Mathematical reasoning tool | `--enable-multimath` |
+...
+
 
 ### Data Preparation
 
