@@ -46,6 +46,8 @@ We follow the verl/verl-tool environment: [TIGER-AI-Lab/verl-tool](https://githu
 ### Tool setup
 
 > *Coming soon*
+
+
 | Model | HuggingFace Link | Usage |
 |---|---|---|
 | ChartMoE | [🤗 IDEA-FinAI/chartmoe](https://huggingface.co/IDEA-FinAI/chartmoe) | `--chartmoe-model "IDEA-FinAI/chartmoe"` |
