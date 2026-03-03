@@ -1,6 +1,6 @@
 # Scaling Agentic Reinforcement Learning for Tool-Integrated Reasoning in VLMs
 
-📃 [Paper](https://arxiv.org/pdf/2511.19773) | 🤗 [Models & Checkpoints](https://huggingface.co/LuKasatvt/VistaGym) | 💻 [Code](https://github.com/Lucanyc/VISTA-Gym)
+📃 [Paper](https://arxiv.org/pdf/2511.19773) | 🤗 [Models & Tools](https://huggingface.co/LuKasatvt/VistaGym) | 💻 [Code](https://github.com/Lucanyc/VISTA-Gym)
 
 📑 **Contents**
 - [📖 Overview](#-overview)
