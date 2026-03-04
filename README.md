@@ -45,16 +45,6 @@ Alternatively, you can run the prepared script directly:
 bash docker/build_docker.sh
 ```
 
-To start and enter the container:
-```bash
-bash docker/run_docker.sh
-```
-
-To verify the installation with a quick test (2 samples):
-```bash
-bash docker/test_docker.sh
-```
-
 ### Training setup
 
 We follow the verl/verl-tool environment: [TIGER-AI-Lab/verl-tool](https://github.com/TIGER-AI-Lab/verl-tool/tree/main/verl_tool)
