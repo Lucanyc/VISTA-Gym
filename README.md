@@ -40,21 +40,6 @@ Since our gym environment relies on a Docker container for isolated coding and e
 docker buildx build -t vlm_gym:latest .
 ```
 
-Then, create and start the container:
-```bash
-docker run -it --name vlm_docker_unified vlm_gym:latest
-```
-
-If the container already exists, you can start it directly:
-```bash
-docker start vlm_docker_unified
-```
-
-To enter the running container:
-```bash
-docker exec -it vlm_docker_unified bash
-```
-
 ### Training setup
 
 We follow the verl/verl-tool environment: [TIGER-AI-Lab/verl-tool](https://github.com/TIGER-AI-Lab/verl-tool/tree/main/verl_tool)
