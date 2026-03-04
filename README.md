@@ -33,12 +33,26 @@ cd vista-gym
 pip install -e .
 ```
 
-### Docker setup
+### Build Docker Container
 
+Since our gym environment relies on a Docker container for isolated coding and execution, you may first build the Docker image.
 ```bash
-cd docker
-bash build_docker.sh
-bash run_docker.sh
+docker buildx build -t vlm_gym:latest .
+```
+
+Then, create and start the container:
+```bash
+docker run -it --name vlm_docker_unified vlm_gym:latest
+```
+
+If the container already exists, you can start it directly:
+```bash
+docker start vlm_docker_unified
+```
+
+To enter the running container:
+```bash
+docker exec -it vlm_docker_unified bash
 ```
 
 ### Training setup
