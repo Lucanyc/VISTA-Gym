@@ -35,9 +35,24 @@ pip install -e .
 
 ### Build Docker Container
 
-Since our gym environment relies on a Docker container for isolated coding and execution, you may first build the Docker image.
+Since our gym environment relies on a Docker container for isolated coding and execution, you need to first build the Docker image:
 ```bash
-docker buildx build -t vlm_gym:latest .
+docker build -f docker/Dockerfile -t vlm_gym:latest .
+```
+
+Alternatively, you can run the prepared script directly:
+```bash
+bash docker/build_docker.sh
+```
+
+To start and enter the container:
+```bash
+bash docker/run_docker.sh
+```
+
+To verify the installation with a quick test (2 samples):
+```bash
+bash docker/test_docker.sh
 ```
 
 ### Training setup
