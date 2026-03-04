@@ -160,7 +160,7 @@ We release training code for both **Qwen** (via verl) and **InternVL** families.
 
 ### 🧠 Step 1: Supervised Fine-Tuning
 
-We use the official [InternVL3.0 training framework](https://internvl.readthedocs.io/en/latest/internvl3.0/deployment.html) for supervised fine-tuning. Please see Please see `config` folder for the example configs used.
+We use the official [InternVL3.0 training framework](https://internvl.readthedocs.io/en/latest/internvl3.0/deployment.html) for supervised fine-tuning. Please see `config` folder for the example configs used.
 
 
 ### 🎯 Step 2: Reinforcement Learning (GRPO)
