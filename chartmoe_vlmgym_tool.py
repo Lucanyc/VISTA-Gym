@@ -1,6 +1,6 @@
 # chartmoe_vlmgym_tool.py
 """
-ChartMoE VLMGym Tool - Fixed version (using correct 490x490 image size)
+ChartMoE VLMGym Tool
 """
 from PIL import Image
 import json
