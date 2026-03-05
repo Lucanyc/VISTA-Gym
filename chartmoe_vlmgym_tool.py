@@ -50,13 +50,9 @@ _model_instances = {}
 _tokenizer_instances = {}
 
 def find_chartmoe_model():
-    """Automatically find ChartMoE model path"""
+    """ChartMoE model path"""
     possible_paths = [
-        "/workspace/mathvista/model",
-        "/workspace/model",
-        "/workspace/chartmoe",
         "/workspace/models/chartmoe",
-        "/models/chartmoe",
     ]
     
     for path in possible_paths:
