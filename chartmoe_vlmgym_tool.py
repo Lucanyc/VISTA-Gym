@@ -147,7 +147,7 @@ class FixedChartMoETool(ChartMoETool):
         # Get parameters from config
         self.max_new_tokens = config.get('max_new_tokens', 800)
         
-        # ChartMoE uses 490x490 image size
+        # ChartMoE image size
         self.image_size = 490
     
     def _load_model(self):
