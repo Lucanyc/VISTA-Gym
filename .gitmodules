@@ -1,0 +1,3 @@
+[submodule "verl-tool-internvl"]
+	path = verl-tool-internvl
+	url = https://github.com/Lucanyc/verl-tool-internvl.git
