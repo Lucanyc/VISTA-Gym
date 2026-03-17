@@ -1,0 +1,36 @@
+# 基于ppo_trainer的默认配置
+defaults:
+  - ppo_trainer
+  - _self_
+
+# 覆盖数据配置
+data:
+  train_files: /mnt/nfs/meng/Online-GRPO/verl-tool/grpo_data/train/online_grpo_train_data.parquet
+  val_files: /mnt/nfs/meng/Online-GRPO/verl-tool/grpo_data/train/online_grpo_train_data.parquet
+  train_batch_size: 6
+  max_prompt_length: 1024
+  max_response_length: 2048
+  trust_remote_code: true
+
+# 模型配置
+actor_rollout_ref:
+  model:
+    path: /mnt/nfs/meng/SFT-unsloth/qwen_vl_tool_merged-200-new
+    trust_remote_code: true
+  
+  rollout:
+    tensor_model_parallel_size: 1
+    gpu_memory_utilization: 0.8
+
+  agent:
+    enable_agent: true
+    tools: ["chartmoe"]
+
+critic:
+  model:
+    path: /mnt/nfs/meng/SFT-unsloth/qwen_vl_tool_merged-200-new
+
+# 训练配置
+trainer:
+  n_gpus_per_node: 6
+  total_epochs: 1
